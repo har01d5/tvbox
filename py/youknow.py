@@ -1,5 +1,6 @@
 # coding=utf-8
 import base64
+import ast
 import json
 import re
 import sys
@@ -62,7 +63,7 @@ class Spider(BaseSpider):
 
     def _extract_vod_id(self, href):
         raw = str(href or "").strip()
-        matched = re.search(r"/v/(\d+)\.html", raw)
+        matched = re.search(r"/d/(\d+)/?$", raw) or re.search(r"/v/(\d+)\.html", raw)
         if matched:
             return matched.group(1)
         if re.fullmatch(r"\d+", raw):
@@ -81,7 +82,7 @@ class Spider(BaseSpider):
         }
 
     def _build_detail_request_url(self, vod_id):
-        return f"{self.host}/v/{self._extract_vod_id(vod_id)}.html"
+        return f"{self.host}/d/{self._extract_vod_id(vod_id)}/"
 
     def _encode_episode_payload(self, payload):
         raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -106,6 +107,10 @@ class Spider(BaseSpider):
             pic = (
                 (card.xpath("./@data-original") or [""])[0].strip()
                 or (card.xpath("./@data-src") or [""])[0].strip()
+                or (card.xpath(".//img/@data-original") or [""])[0].strip()
+                or (card.xpath(".//img/@data-src") or [""])[0].strip()
+                or (card.xpath(".//@data-original") or [""])[0].strip()
+                or (card.xpath(".//@data-src") or [""])[0].strip()
                 or (card.xpath(".//@src") or [""])[0].strip()
             )
             remarks = "".join(
@@ -136,6 +141,7 @@ class Spider(BaseSpider):
     def _page_result(self, items, pg):
         page = int(pg)
         pagecount = page + 1 if items else page
+        self.log(items[0])
         return {
             "list": items,
             "page": page,
@@ -323,13 +329,67 @@ class Spider(BaseSpider):
         ) and any(ext in text for ext in (".m3u8", ".mp4", ".flv"))
 
     def _parse_player_config(self, html):
-        matched = re.search(r"player_aaaa\s*=\s*(\{[\s\S]*?\})\s*;?", str(html or ""), re.I)
+        text = str(html or "")
+        matched = re.search(r"player_aaaa\s*=", text, re.I)
         if not matched:
             return None
-        try:
-            return json.loads(matched.group(1))
-        except Exception:
+        object_start = text.find("{", matched.end())
+        if object_start < 0:
             return None
+        raw_object = self._extract_balanced_object(text, object_start)
+        if not raw_object:
+            return None
+        return self._parse_object_literal(raw_object)
+
+    def _extract_balanced_object(self, text, start_index):
+        raw = str(text or "")
+        if start_index < 0 or start_index >= len(raw) or raw[start_index] != "{":
+            return ""
+
+        depth = 0
+        in_string = False
+        quote_char = ""
+        escaped = False
+
+        for index in range(start_index, len(raw)):
+            char = raw[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote_char:
+                    in_string = False
+                continue
+
+            if char in ('"', "'"):
+                in_string = True
+                quote_char = char
+                continue
+
+            if char == "{":
+                depth += 1
+                continue
+
+            if char == "}":
+                depth -= 1
+                if depth == 0:
+                    return raw[start_index : index + 1]
+
+        return ""
+
+    def _parse_object_literal(self, raw):
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        sanitized = re.sub(r",\s*}", "}", text)
+        try:
+            return json.loads(sanitized)
+        except Exception:
+            try:
+                return ast.literal_eval(sanitized)
+            except Exception:
+                return None
 
     def _collect_direct_media_urls(self, html):
         text = str(html or "").replace("\\/", "/")

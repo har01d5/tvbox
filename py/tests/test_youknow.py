@@ -21,7 +21,7 @@ class TestYouKnowSpider(unittest.TestCase):
 
     def test_parse_list_cards_extracts_compact_vod_id(self):
         html = """
-        <a class="module-poster-item" href="/v/1234.html" title="示例影片" data-original="/cover.jpg">
+        <a class="module-poster-item" href="/d/1234/" title="示例影片" data-original="/cover.jpg">
           <div class="module-item-note">更新至10集</div>
         </a>
         """
@@ -38,10 +38,27 @@ class TestYouKnowSpider(unittest.TestCase):
             ],
         )
 
+    def test_parse_list_cards_prefers_nested_lazyload_original_over_placeholder_src(self):
+        html = """
+        <a class="module-poster-item" href="/d/5678/" title="一念梦离">
+          <div class="module-item-pic">
+            <img
+              class="lazy lazyload"
+              data-original="/upload/vod/20260409-1/f1d0233129bc59adb6d2e8fa6396e681.jpg"
+              alt="一念梦离"
+              src="/upload/mxprocms/20230815-1/8a218aed43eb11efa5a045d21a46d601.webp"
+            />
+          </div>
+          <div class="module-item-note">更新中</div>
+        </a>
+        """
+        cards = self.spider._parse_list_cards(html)
+        self.assertEqual(cards[0]["vod_pic"], "https://www.youknow.tv/upload/vod/20260409-1/f1d0233129bc59adb6d2e8fa6396e681.jpg")
+
     @patch.object(Spider, "_request_html")
     def test_home_video_content_uses_today_updates_page(self, mock_request_html):
         mock_request_html.return_value = """
-        <a class="module-poster-item" href="/v/111.html" title="今日更新" data-original="/recent.jpg">
+        <a class="module-poster-item" href="/d/111/" title="今日更新" data-original="/recent.jpg">
           <div class="module-item-note">HD</div>
         </a>
         """
@@ -52,7 +69,7 @@ class TestYouKnowSpider(unittest.TestCase):
     @patch.object(Spider, "_request_html")
     def test_category_content_builds_page_result(self, mock_request_html):
         mock_request_html.return_value = """
-        <a class="module-poster-item" href="/v/222.html" title="分类影片" data-original="/cate.jpg">
+        <a class="module-poster-item" href="/d/222/" title="分类影片" data-original="/cate.jpg">
           <div class="module-item-note">完结</div>
         </a>
         """
@@ -64,7 +81,7 @@ class TestYouKnowSpider(unittest.TestCase):
     @patch.object(Spider, "_request_html")
     def test_category_content_uses_page1_path_without_page_number(self, mock_request_html):
         mock_request_html.return_value = """
-        <a class="module-poster-item" href="/v/555.html" title="分类第一页" data-original="/page1.jpg">
+        <a class="module-poster-item" href="/d/555/" title="分类第一页" data-original="/page1.jpg">
           <div class="module-item-note">HD</div>
         </a>
         """
@@ -75,7 +92,7 @@ class TestYouKnowSpider(unittest.TestCase):
     @patch.object(Spider, "_request_html")
     def test_search_content_reuses_card_parser(self, mock_request_html):
         mock_request_html.return_value = """
-        <a class="module-poster-item" href="/v/333.html" title="搜索影片" data-original="/search.jpg">
+        <a class="module-poster-item" href="/d/333/" title="搜索影片" data-original="/search.jpg">
           <div class="module-item-note">抢先版</div>
         </a>
         """
@@ -115,7 +132,7 @@ class TestYouKnowSpider(unittest.TestCase):
         result = self.spider._parse_detail_page(html, "888")
         vod = result["list"][0]
         self.assertEqual(vod["vod_id"], "888")
-        self.assertEqual(vod["path"], "https://www.youknow.tv/v/888.html")
+        self.assertEqual(vod["path"], "https://www.youknow.tv/d/888/")
         self.assertEqual(vod["vod_name"], "示例剧")
         self.assertEqual(vod["type_name"], "剧情")
         self.assertEqual(vod["vod_area"], "大陆")
@@ -137,13 +154,28 @@ class TestYouKnowSpider(unittest.TestCase):
     def test_detail_content_builds_detail_request_url_from_vod_id(self, mock_request_html):
         mock_request_html.return_value = '<h1>详情影片</h1><div class="module-play-list"><a href="/p/123-1-1/">第1集</a></div>'
         result = self.spider.detailContent(["123"])
-        self.assertEqual(mock_request_html.call_args.args[0], "https://www.youknow.tv/v/123.html")
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.youknow.tv/d/123/")
         self.assertEqual(result["list"][0]["vod_id"], "123")
 
     def test_extract_player_config_reads_player_aaaa(self):
         html = '<script>var player_aaaa={"url":"https%3A%2F%2Fcdn.example%2Fa.m3u8","encrypt":"1"};</script>'
         data = self.spider._parse_player_config(html)
         self.assertEqual(data["encrypt"], "1")
+
+    def test_extract_player_config_supports_nested_object_literal(self):
+        html = """
+        <script>
+        var player_aaaa={
+          "flag":"play",
+          "encrypt":2,
+          "vod_data":{"vod_name":"示例影片","vod_actor":"甲,乙"},
+          "url":"JTY4JTc0JTc0JTcwJTczJTNBJTJGJTJGJTc2JTY5JTc0JTY0JTJFJTYzJTY0JTZFJTJFJTY1JTc4JTYxJTZEJTcwJTZDJTY1JTJGJTYxJTJGJTY5JTZFJTY0JTY1JTc4JTJFJTZEJTMzJTc1JTM4"
+        };
+        </script>
+        """
+        data = self.spider._parse_player_config(html)
+        self.assertEqual(data["encrypt"], 2)
+        self.assertEqual(data["vod_data"]["vod_name"], "示例影片")
 
     def test_decode_player_url_supports_encrypt_1_and_2(self):
         self.assertEqual(
@@ -176,6 +208,28 @@ class TestYouKnowSpider(unittest.TestCase):
         self.assertEqual(result["parse"], 0)
         self.assertEqual(result["url"], "https://video.example/page.m3u8")
         self.assertEqual(result["header"]["Referer"], "https://www.youknow.tv/")
+
+    @patch.object(Spider, "_request_html")
+    def test_player_content_handles_nested_real_world_player_config(self, mock_request_html):
+        payload = self.spider._encode_episode_payload(
+            {
+                "vod_id": "202774",
+                "episode_index": 1,
+                "title": "HD中字",
+                "candidates": [
+                    {"source": "线路1", "source_id": "1", "episode_url": "https://www.youknow.tv/p/202774-1-1/"}
+                ],
+            }
+        )
+        mock_request_html.return_value = """
+        <script>
+        var player_aaaa={"flag":"play","encrypt":2,"vod_data":{"vod_name":"机动战士高达闪光的哈萨维"},"url":"JTY4JTc0JTc0JTcwJTczJTNBJTJGJTJGJTc2JTY5JTcwJTJFJTY0JTc5JTc0JTc0JTJEJTZFJTY1JTc0JTc3JTZGJTcyJTZCJTJFJTYzJTZGJTZEJTJGJTMyJTMwJTMyJTM2JTMwJTMzJTMyJTM1JTJGJTMyJTMxJTMzJTMzJTM0JTVGJTMxJTM4JTM4JTM1JTM2JTYyJTM0JTM3JTJGJTY5JTZFJTY0JTY1JTc4JTJFJTZEJTMzJTc1JTM4"};
+        </script>
+        <iframe src="/template/mxpro/html/vod/adsterra_iframe.html"></iframe>
+        """
+        result = self.spider.playerContent("YouKnowTV", payload, {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://vip.dytt-network.com/20260325/21334_18856b47/index.m3u8")
 
     @patch.object(Spider, "_request_html")
     def test_player_content_tries_next_candidate_when_first_fails(self, mock_request_html):
