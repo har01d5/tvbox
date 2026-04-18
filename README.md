@@ -12,6 +12,10 @@ http://tvbox.xn--4kq62z5rby2qupq9ub.top/
 
 http://mitvbox.xyz/%E5%B0%8F%E7%B1%B3/DEMO.json
 
+http://cdn.qiaoji8.com/tvbox.json
+
+https://raw.githubusercontent.com/yoursmile66/TVBox/refs/heads/main/XC.json
+
 http://ok321.top/tv
 
 ## 电视直播
