@@ -22,7 +22,7 @@ https://raw.githubusercontent.com/kimwang1978/collect-txt/refs/heads/main/bbxx_l
 
 https://raw.githubusercontent.com/best-fan/iptv-sources/refs/heads/main/cn_all_status.m3u8
 
-https://raw.githubusercontent.com/Jsnzkpg/Jsnzkpg/refs/heads/Jsnzkpg/Jsnzkpg1.m3u
+https://raw.githubusercontent.com/Jsnzkpg/Jsnzkpg/refs/heads/Jsnzkpg/Jsnzkpg1.m3u ⭐
 
 
 ### 虎牙一起看
