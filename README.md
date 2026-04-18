@@ -5,7 +5,16 @@ https://github.com/har01d5/tvbox/tree/master/py
 
 https://github.com/cluntop/tvbox/tree/main/py
 
-## 直播资源
+## 订阅资源
+http://www.饭太硬.com/tv
+
+http://tvbox.xn--4kq62z5rby2qupq9ub.top/
+
+http://mitvbox.xyz/%E5%B0%8F%E7%B1%B3/DEMO.json
+
+http://ok321.top/tv
+
+## 电视直播
 ### 咪咕
 https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/interface.txt
 
@@ -25,7 +34,11 @@ https://raw.githubusercontent.com/kimwang1978/collect-txt/refs/heads/main/bbxx_l
 
 https://raw.githubusercontent.com/best-fan/iptv-sources/refs/heads/main/cn_all_status.m3u8
 
+#### 联通线路
+https://raw.githubusercontent.com/Supprise0901/TVBox_live/refs/heads/main/live.txt
 
+
+## 网络直播
 ### 虎牙一起看
 https://sub.ottiptv.cc/huyayqk.m3u
 
