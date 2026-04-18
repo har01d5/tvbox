@@ -1,7 +1,11 @@
 import unittest
+from base64 import b64encode
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from unittest.mock import patch
+
+from Cryptodome.Cipher import AES
+from Cryptodome.Util.Padding import pad
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -146,6 +150,55 @@ class TestCZZYSpider(unittest.TestCase):
         result = self.spider.detailContent(["/movie/example.html"])
         self.assertEqual(result["list"][0]["vod_id"], "/movie/example.html")
         self.assertEqual(result["list"][0]["vod_name"], "示例影片")
+
+    def test_extract_iframe_src(self):
+        html = '<iframe src="/player-v2/test"></iframe>'
+        self.assertEqual(
+            self.spider._extract_iframe_src(html, "https://www.czzy89.com"),
+            "https://www.czzy89.com/player-v2/test",
+        )
+
+    def test_extract_player_url_prefers_mysvg_then_art_url(self):
+        self.assertEqual(
+            self.spider._extract_player_url_from_iframe("var mysvg='https://video.example/a.m3u8';"),
+            "https://video.example/a.m3u8",
+        )
+        self.assertEqual(
+            self.spider._extract_player_url_from_iframe("art.url='https://video.example/b.m3u8';"),
+            "https://video.example/b.m3u8",
+        )
+
+    def test_extract_player_url_decodes_data_payload(self):
+        original = "https://video.example/data.m3u8"
+        middle = len(original) // 2
+        obfuscated = original[:middle] + "ABCDEFG" + original[middle:]
+        encoded = "".join("{:02x}".format(ord(ch)) for ch in obfuscated)[::-1]
+        html = 'var config = {"data":"%s"};' % encoded
+        self.assertEqual(self.spider._extract_player_url_from_iframe(html), original)
+
+    def test_extract_player_url_decrypts_player_payload(self):
+        payload = '{"url":"https://video.example/encrypted.m3u8"}'
+        key = b"VFBTzdujpR9FWBhe"
+        iv = b"1234567890abcdef"
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        encrypted = b64encode(cipher.encrypt(pad(payload.encode("utf-8"), AES.block_size))).decode("utf-8")
+        html = 'var player="%s";var rand="%s";' % (encrypted, iv.decode("utf-8"))
+        self.assertEqual(
+            self.spider._extract_player_url_from_iframe(html),
+            "https://video.example/encrypted.m3u8",
+        )
+
+    def test_extract_player_url_supports_wp_nonce_fallback(self):
+        html = """
+        <script>
+        window.wp_nonce = "token";
+        var config = { url: 'https://video.example/wp.m3u8' };
+        </script>
+        """
+        self.assertEqual(
+            self.spider._extract_player_url_from_iframe(html),
+            "https://video.example/wp.m3u8",
+        )
 
 
 if __name__ == "__main__":

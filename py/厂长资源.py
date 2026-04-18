@@ -1,6 +1,12 @@
 # coding=utf-8
+import base64
+import json
+import re
 import sys
 from urllib.parse import quote, urljoin
+
+from Cryptodome.Cipher import AES
+from Cryptodome.Util.Padding import unpad
 
 from base.spider import Spider as BaseSpider
 
@@ -208,6 +214,66 @@ class Spider(BaseSpider):
             "vod_play_url": "$$$".join(play_url),
         }
         return {"list": [vod]}
+
+    def _extract_iframe_src(self, html, host):
+        match = re.search(r"<iframe[^>]+src=['\"]([^'\"]+)['\"]", html, re.I)
+        if not match:
+            return ""
+        return self._normalize_url(match.group(1), host)
+
+    def _decode_data_url(self, value):
+        try:
+            encrypted = value[::-1]
+            temp = ""
+            for idx in range(0, len(encrypted), 2):
+                pair = encrypted[idx:idx + 2]
+                if len(pair) == 2:
+                    temp += chr(int(pair, 16))
+            middle = (len(temp) - 7) // 2
+            return temp[:middle] + temp[middle + 7:]
+        except Exception:
+            return ""
+
+    def _decrypt_player_payload(self, cipher_text, iv):
+        try:
+            cipher = AES.new(b"VFBTzdujpR9FWBhe", AES.MODE_CBC, iv.encode("utf-8"))
+            raw = base64.b64decode(cipher_text)
+            value = unpad(cipher.decrypt(raw), AES.block_size).decode("utf-8")
+            return json.loads(value).get("url", "")
+        except Exception:
+            return ""
+
+    def _extract_player_url_from_iframe(self, html):
+        match = re.search(
+            r"var\s+player\s*=\s*[\"']([^\"']+)[\"'].*?var\s+rand\s*=\s*[\"']([^\"']+)[\"']",
+            html,
+            re.S,
+        )
+        if match:
+            value = self._decrypt_player_payload(match.group(1), match.group(2))
+            if value:
+                return value
+
+        match = re.search(r"[\"']data[\"']\s*:\s*[\"']([^\"']+)[\"']", html)
+        if match:
+            value = self._decode_data_url(match.group(1))
+            if value:
+                return value
+
+        match = re.search(r"\bmysvg\b\s*=\s*[\"']([^\"']+)[\"']", html, re.I)
+        if match:
+            return match.group(1)
+
+        match = re.search(r"art\.url\s*=\s*[\"']([^\"']+)[\"']", html, re.I)
+        if match:
+            return match.group(1)
+
+        if "window.wp_nonce" in html:
+            match = re.search(r"url\s*:\s*[\"']([^\"']+)[\"']", html, re.I)
+            if match:
+                return match.group(1)
+
+        return ""
 
     def categoryContent(self, tid, pg, filter, extend):
         path = self.category_paths.get(tid, self.category_paths["movie"]).format(pg=pg)
