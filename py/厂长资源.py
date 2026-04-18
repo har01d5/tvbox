@@ -1,6 +1,6 @@
 # coding=utf-8
 import sys
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from base.spider import Spider as BaseSpider
 
@@ -11,8 +11,8 @@ class Spider(BaseSpider):
     def __init__(self):
         self.name = "厂长资源"
         self.hosts = [
-            "https://www.cz01.org",
             "https://www.czzy89.com",
+            "https://www.cz01.org",
         ]
         self.current_host = self.hosts[0]
         self.headers = {
@@ -39,6 +39,23 @@ class Spider(BaseSpider):
             {"type_name": "韩剧", "type_id": "kr_drama"},
             {"type_name": "海外剧", "type_id": "intl_drama"},
         ]
+        self.category_paths = {
+            "movie": "/movie_bt/movie_bt_series/dyy/page/{pg}",
+            "tv": "/movie_bt/movie_bt_series/dianshiju/page/{pg}",
+            "anime": "/movie_bt/movie_bt_series/dohua/page/{pg}",
+            "cn_movie": "/movie_bt/movie_bt_series/huayudianying/page/{pg}",
+            "in_movie": "/movie_bt/movie_bt_series/yindudianying/page/{pg}",
+            "ru_movie": "/movie_bt/movie_bt_series/eluosidianying/page/{pg}",
+            "ca_movie": "/movie_bt/movie_bt_series/jianadadianying/page/{pg}",
+            "jp_movie": "/movie_bt/movie_bt_series/ribendianying/page/{pg}",
+            "kr_movie": "/movie_bt/movie_bt_series/hanguodianying/page/{pg}",
+            "western_movie": "/movie_bt/movie_bt_series/meiguodianying/page/{pg}",
+            "cn_drama": "/movie_bt/movie_bt_series/guochanju/page/{pg}",
+            "jp_drama": "/movie_bt/movie_bt_series/rj/page/{pg}",
+            "us_drama": "/movie_bt/movie_bt_series/mj/page/{pg}",
+            "kr_drama": "/movie_bt/movie_bt_series/hj/page/{pg}",
+            "intl_drama": "/movie_bt/movie_bt_series/hwj/page/{pg}",
+        }
 
     def init(self, extend=""):
         return None
@@ -51,6 +68,44 @@ class Spider(BaseSpider):
 
     def homeVideoContent(self):
         return {"list": []}
+
+    def _request_html(self, path_or_url, expect_xpath=None, referer=None):
+        candidates = [self.current_host] + [host for host in self.hosts if host != self.current_host]
+        last_error = None
+
+        for host in candidates:
+            target = path_or_url if path_or_url.startswith("http") else urljoin(host, path_or_url)
+            headers = dict(self.headers)
+            if referer:
+                headers["Referer"] = referer
+            try:
+                response = self.fetch(target, headers=headers, timeout=10)
+                if response.status_code != 200:
+                    continue
+                html = response.text or ""
+                if expect_xpath:
+                    root = self.html(html)
+                    if root is None or not root.xpath(expect_xpath):
+                        continue
+                self.current_host = host
+                return html, host
+            except Exception as exc:
+                last_error = exc
+
+        if last_error:
+            raise last_error
+        return "", self.current_host
+
+    def _page_result(self, items, pg):
+        page = int(pg)
+        pagecount = page + 1 if items else page
+        return {
+            "list": items,
+            "page": page,
+            "pagecount": pagecount,
+            "limit": len(items),
+            "total": pagecount * max(len(items), 1),
+        }
 
     def _parse_media_cards(self, html, host):
         root = self.html(html)
@@ -94,3 +149,15 @@ class Spider(BaseSpider):
             )
 
         return results
+
+    def categoryContent(self, tid, pg, filter, extend):
+        path = self.category_paths.get(tid, self.category_paths["movie"]).format(pg=pg)
+        html, host = self._request_html(path, expect_xpath="//a[@href]")
+        items = self._parse_media_cards(html, host)
+        return self._page_result(items, pg)
+
+    def searchContent(self, key, quick, pg="1"):
+        path = "/boss1O1?q={keyword}".format(keyword=quote(key))
+        html, host = self._request_html(path, expect_xpath="//a[@href]")
+        items = self._parse_media_cards(html, host)
+        return self._page_result(items, pg)
