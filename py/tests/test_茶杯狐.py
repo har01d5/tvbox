@@ -33,6 +33,14 @@ class TestCupfoxSpider(unittest.TestCase):
             self.spider._decode_play_id("play/abc123"),
             "https://www.cupfox.ai/play/abc123.html",
         )
+        self.assertEqual(
+            self.spider._encode_detail_id("/video/119983.html"),
+            "detail/video/119983",
+        )
+        self.assertEqual(
+            self.spider._decode_detail_id("detail/video/119983"),
+            "https://www.cupfox.ai/video/119983.html",
+        )
 
     def test_merge_set_cookie_and_cookie_header(self):
         jar = {}
@@ -82,6 +90,32 @@ class TestCupfoxSpider(unittest.TestCase):
         self.assertEqual(html, "<html><title>ok</title></html>")
         self.assertEqual(len(calls), 3)
         self.assertEqual(calls[2]["headers"]["Cookie"], "session=abc; shield=passed")
+
+    def test_request_with_firewall_accepts_capitalized_set_cookie_header(self):
+        calls = []
+
+        def fake_request(url, method="GET", body=None, headers=None):
+            calls.append({"url": url, "method": method, "body": body, "headers": headers or {}})
+            if len(calls) == 1:
+                return {
+                    "status_code": 200,
+                    "text": '<div id="verifyBox"></div><script>var token = encrypt("seed");</script>',
+                    "headers": {"Set-Cookie": "PHPSESSID=abc123; path=/"},
+                }
+            if "robot.php" in url:
+                self.assertEqual(headers["Cookie"], "PHPSESSID=abc123")
+                return {"status_code": 200, "text": '{"msg":"ok"}', "headers": {}}
+            return {
+                "status_code": 200,
+                "text": "<html><title>ok</title></html>",
+                "headers": {},
+            }
+
+        self.spider._request_text = fake_request
+        html = self.spider._request_with_firewall("https://www.cupfox.ai/type/1-2.html")
+
+        self.assertEqual(html, "<html><title>ok</title></html>")
+        self.assertEqual(calls[2]["headers"]["Cookie"], "PHPSESSID=abc123")
 
     def test_extract_player_data_reads_embedded_json(self):
         html = '<script>player_aaaa={"url":"vid-1","from":"lineA","server":"no"};</script>'
@@ -158,6 +192,45 @@ class TestCupfoxSpider(unittest.TestCase):
         self.assertEqual(search["page"], 3)
         self.assertEqual(search["list"][0]["vod_remarks"], "搜索备注")
         self.assertNotIn("pagecount", search)
+
+    def test_category_content_uses_plain_type_path_for_first_page(self):
+        seen = []
+
+        def fake_request(url):
+            seen.append(url)
+            return """
+            <div class="movie-list-item">
+              <a href="/movie/c1.html" title="分类片"></a>
+              <img class="Lazy" data-original="/cate.jpg" />
+            </div>
+            """
+
+        self.spider._request_with_firewall = fake_request
+        self.spider.categoryContent("1", "1", False, {})
+
+        self.assertEqual(seen, ["https://www.cupfox.ai/type/1.html"])
+
+    def test_parse_cards_supports_video_detail_links(self):
+        html = """
+        <div class="movie-list-item">
+          <a href="/video/119983.html" title="挽救计划"></a>
+          <div class="Lazy" data-original="/poster.jpg"></div>
+          <span class="movie-item-note">正片</span>
+        </div>
+        """
+        items = self.spider._parse_cards(html)
+
+        self.assertEqual(
+            items,
+            [
+                {
+                    "vod_id": "detail/video/119983",
+                    "vod_name": "挽救计划",
+                    "vod_pic": "https://www.cupfox.ai/poster.jpg",
+                    "vod_remarks": "正片",
+                }
+            ],
+        )
 
     def test_detail_content_builds_play_sources(self):
         html = """

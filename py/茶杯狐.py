@@ -39,12 +39,21 @@ class Spider(BaseSpider):
         return urljoin(self.host + "/", str(path or "").strip())
 
     def _encode_detail_id(self, href):
-        matched = re.search(r"/movie/([^/?#]+)\.html", self._build_url(href))
-        return f"detail/{matched.group(1)}" if matched else ""
+        movie_match = re.search(r"/movie/([^/?#]+)\.html", self._build_url(href))
+        if movie_match:
+            return f"detail/{movie_match.group(1)}"
+        video_match = re.search(r"/video/([^/?#]+)\.html", self._build_url(href))
+        if video_match:
+            return f"detail/video/{video_match.group(1)}"
+        return ""
 
     def _decode_detail_id(self, vod_id):
-        matched = re.search(r"^detail/([^/?#]+)$", str(vod_id or "").strip())
-        return self._build_url(f"/movie/{matched.group(1)}.html") if matched else ""
+        raw = str(vod_id or "").strip()
+        video_match = re.search(r"^detail/video/([^/?#]+)$", raw)
+        if video_match:
+            return self._build_url(f"/video/{video_match.group(1)}.html")
+        movie_match = re.search(r"^detail/(?:movie/)?([^/?#]+)$", raw)
+        return self._build_url(f"/movie/{movie_match.group(1)}.html") if movie_match else ""
 
     def _encode_play_id(self, href):
         matched = re.search(r"/play/([^/?#]+)\.html", self._build_url(href))
@@ -66,6 +75,15 @@ class Spider(BaseSpider):
 
     def _cookie_header(self, cookie_jar):
         return "; ".join([f"{key}={value}" for key, value in cookie_jar.items()])
+
+    def _header_value(self, headers, name, default=None):
+        if not isinstance(headers, dict):
+            return default
+        lowered = str(name or "").lower()
+        for key, value in headers.items():
+            if str(key).lower() == lowered:
+                return value
+        return default
 
     def _extract_firewall_token(self, html_text):
         matched = re.search(r'var\s+token\s*=\s*encrypt\("([^"]+)"\)', str(html_text or ""))
@@ -94,13 +112,13 @@ class Spider(BaseSpider):
         return {
             "status_code": response.status_code,
             "text": response.text or "",
-            "headers": dict(response.headers or {}),
+            "headers": {str(key).lower(): value for key, value in dict(response.headers or {}).items()},
         }
 
     def _request_with_firewall(self, url):
         cookie_jar = {}
         first = self._request_text(url)
-        self._merge_set_cookie(cookie_jar, first["headers"].get("set-cookie", []))
+        self._merge_set_cookie(cookie_jar, self._header_value(first["headers"], "set-cookie", []))
         if not re.search(r"人机验证|verifyBox", first["text"] or ""):
             if int(first["status_code"] or 0) != 200:
                 raise ValueError(f"HTTP {first['status_code']} @ {url}")
@@ -130,7 +148,7 @@ class Spider(BaseSpider):
             body=verify_body,
             headers=verify_headers,
         )
-        self._merge_set_cookie(cookie_jar, verify["headers"].get("set-cookie", []))
+        self._merge_set_cookie(cookie_jar, self._header_value(verify["headers"], "set-cookie", []))
 
         second_headers = {}
         solved_cookie = self._cookie_header(cookie_jar)
@@ -256,7 +274,8 @@ class Spider(BaseSpider):
 
     def categoryContent(self, tid, pg, filter, extend):
         page = int(pg)
-        html = self._request_with_firewall(self._build_url(f"/type/{tid}-{page}.html"))
+        path = f"/type/{tid}.html" if page == 1 else f"/type/{tid}-{page}.html"
+        html = self._request_with_firewall(self._build_url(path))
         items = self._parse_cards(html)
         return {"page": page, "limit": self.page_limit, "total": page * len(items), "list": items}
 
