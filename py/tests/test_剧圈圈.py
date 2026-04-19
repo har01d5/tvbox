@@ -144,6 +144,53 @@ class TestJuQuanQuanSpider(unittest.TestCase):
         self.spider.detailContent(["vod/321"])
         self.assertEqual(mock_request_html.call_args.args[0], "https://www.jqqzx.cc/vod/321.html")
 
+    def test_extract_player_data_reads_player_aaaa(self):
+        html = '<script>var player_aaaa={"url":"https://video.example/direct.m3u8"};</script>'
+        self.assertEqual(self.spider._extract_player_data(html)["url"], "https://video.example/direct.m3u8")
+
+    @patch.object(Spider, "_request_with_headers")
+    def test_player_content_returns_direct_media_url(self, mock_request_with_headers):
+        mock_request_with_headers.return_value = {
+            "body": '<script>var player_aaaa={"url":"https://video.example/direct.m3u8"};</script>',
+            "headers": {},
+            "status_code": 200,
+        }
+        result = self.spider.playerContent("线路A", "play/123-1-1", {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://video.example/direct.m3u8")
+
+    @patch.object(Spider, "_request_with_headers")
+    def test_player_content_uses_parse_api_when_player_vid_is_not_direct(self, mock_request_with_headers):
+        mock_request_with_headers.side_effect = [
+            {
+                "body": '<script>var player_aaaa={"url":"https%3A%2F%2Fmiddle.example%2Fembed%3Fid%3D1"};</script>',
+                "headers": {"set-cookie": ["foo=bar; Path=/"]},
+                "status_code": 200,
+            },
+            {
+                "body": "<html></html>",
+                "headers": {"set-cookie": ["token=abc; Path=/"]},
+                "status_code": 200,
+            },
+            {
+                "body": '{"code":200,"data":{"url":"error://apiRes_dummy"}}',
+                "headers": {},
+                "status_code": 200,
+            },
+        ]
+        self.spider._decode_url = lambda value: "https://video.example/fallback.m3u8"
+        result = self.spider.playerContent("线路A", "play/123-1-1", {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://video.example/fallback.m3u8")
+
+    @patch.object(Spider, "_request_with_headers")
+    def test_player_content_falls_back_to_play_page_when_player_data_missing(self, mock_request_with_headers):
+        mock_request_with_headers.return_value = {"body": "<html></html>", "headers": {}, "status_code": 200}
+        result = self.spider.playerContent("线路A", "play/123-1-1", {})
+        self.assertEqual(result["parse"], 1)
+        self.assertEqual(result["jx"], 1)
+        self.assertEqual(result["url"], "https://www.jqqzx.cc/play/123-1-1.html")
+
 
 if __name__ == "__main__":
     unittest.main()

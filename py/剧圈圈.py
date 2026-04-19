@@ -1,8 +1,10 @@
 # coding=utf-8
+import base64
+import hashlib
 import json
 import re
 import sys
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, unquote, urljoin
 
 from base.spider import Spider as BaseSpider
 
@@ -244,3 +246,122 @@ class Spider(BaseSpider):
             parsed = self._parse_detail_page(self._request_html(detail_url), vod_id)
             result["list"].extend(parsed.get("list", []))
         return result
+
+    def _request_with_headers(self, path_or_url, headers=None, data=None):
+        target = path_or_url if str(path_or_url).startswith("http") else self._build_url(path_or_url)
+        request_headers = dict(self.headers)
+        if headers:
+            request_headers.update(headers)
+        response = self.fetch(target, headers=request_headers, data=data, timeout=10)
+        return {
+            "body": response.text or "",
+            "headers": getattr(response, "headers", {}) or {},
+            "status_code": response.status_code,
+        }
+
+    def _get_set_cookies(self, headers):
+        raw = headers.get("set-cookie") or headers.get("Set-Cookie") or []
+        items = raw if isinstance(raw, list) else [raw]
+        return [str(item).split(";", 1)[0] for item in items if str(item).strip()]
+
+    def _merge_cookies(self, *groups):
+        values = {}
+        for group in groups:
+            items = group if isinstance(group, list) else [group]
+            for item in items:
+                text = str(item or "").strip()
+                if "=" not in text:
+                    continue
+                key, val = text.split("=", 1)
+                values[key] = val
+        return [f"{key}={val}" for key, val in values.items()]
+
+    def _base64_decode(self, value):
+        text = re.sub(r"\s+", "", str(value or ""))
+        if not text:
+            return ""
+        text += "=" * ((4 - len(text) % 4) % 4)
+        try:
+            return base64.b64decode(text).decode("utf-8")
+        except Exception:
+            return ""
+
+    def _decode_url(self, value):
+        raw = str(value or "").replace("error://apiRes_", "").strip()
+        if not raw:
+            return ""
+        key = hashlib.md5("test".encode("utf-8")).hexdigest()
+        first = self._base64_decode(raw)
+        mixed = "".join(chr(ord(ch) ^ ord(key[index % len(key)])) for index, ch in enumerate(first))
+        decoded = self._base64_decode(mixed)
+        parts = decoded.split("/")
+        if len(parts) < 3:
+            return ""
+        try:
+            from_map = json.loads(self._base64_decode(parts[1]))
+            to_map = json.loads(self._base64_decode(parts[0]))
+        except Exception:
+            return ""
+        body = self._base64_decode("/".join(parts[2:]))
+        mapped = re.sub(
+            r"[a-zA-Z]",
+            lambda match: to_map[from_map.index(match.group(0))]
+            if match.group(0) in from_map and from_map.index(match.group(0)) < len(to_map)
+            else match.group(0),
+            body,
+        )
+        matched = re.search(r"https?://[^\s'\"<>]+", mapped)
+        return matched.group(0) if matched else mapped.strip()
+
+    def _extract_player_data(self, html):
+        matched = re.search(r"player_aaaa\s*=\s*(\{[\s\S]*?\})\s*;?\s*</script>", str(html or ""), re.I)
+        if not matched:
+            return None
+        try:
+            return json.loads(matched.group(1))
+        except Exception:
+            return None
+
+    def _is_media_url(self, value):
+        return bool(re.search(r"^https?://.*\.(m3u8|mp4|flv|m4s)(\?.*)?$", str(value or ""), re.I))
+
+    def playerContent(self, flag, id, vipFlags):
+        play_url = self._decode_play_id(id)
+        if not play_url:
+            return {"parse": 1, "jx": 1, "url": "", "header": dict(self.headers)}
+        try:
+            play_res = self._request_with_headers(play_url, headers={"Referer": self.host + "/"})
+            player = self._extract_player_data(play_res["body"])
+            if not player:
+                return {"parse": 1, "jx": 1, "url": play_url, "header": dict(self.headers)}
+            vid = unquote(str(player.get("url") or "")).strip()
+            if vid and not self._is_media_url(vid):
+                decoded = self._decode_url(vid)
+                if decoded.startswith("http"):
+                    vid = decoded
+            if self._is_media_url(vid):
+                return {"parse": 0, "jx": 0, "url": vid, "header": {**self.headers, "Referer": play_url}}
+            cookies = self._get_set_cookies(play_res["headers"])
+            player_page = self._build_url(f"/jx/player.php?vid={quote(vid)}")
+            player_res = self._request_with_headers(
+                player_page,
+                headers={"Referer": play_url, **({"Cookie": "; ".join(cookies)} if cookies else {})},
+            )
+            cookies = self._merge_cookies(cookies, self._get_set_cookies(player_res["headers"]))
+            api_res = self._request_with_headers(
+                self._build_url("/jx/api.php"),
+                headers={
+                    "Referer": player_page,
+                    "Origin": self.host,
+                    "X-Requested-With": "XMLHttpRequest",
+                    **({"Cookie": "; ".join(cookies)} if cookies else {}),
+                },
+                data=f"vid={quote(vid)}",
+            )
+            payload = json.loads(api_res["body"] or "{}")
+            real_url = self._decode_url(payload.get("data", {}).get("url"))
+            if real_url.startswith("http"):
+                return {"parse": 0, "jx": 0, "url": real_url, "header": {**self.headers, "Referer": player_page}}
+            return {"parse": 1, "jx": 1, "url": play_url, "header": {**self.headers, "Referer": player_page}}
+        except Exception:
+            return {"parse": 1, "jx": 1, "url": play_url, "header": dict(self.headers)}
