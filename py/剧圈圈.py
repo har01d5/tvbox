@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from urllib.parse import quote, unquote, urljoin
 
@@ -252,15 +253,57 @@ class Spider(BaseSpider):
         request_headers = dict(self.headers)
         if headers:
             request_headers.update(headers)
-        if data is None:
-            response = self.fetch(target, headers=request_headers, timeout=10)
-        else:
-            response = self.post(target, data=data, headers=request_headers, timeout=10)
-        return {
-            "body": response.text or "",
-            "headers": getattr(response, "headers", {}) or {},
-            "status_code": response.status_code,
-        }
+        try:
+            if data is None:
+                response = self.fetch(target, headers=request_headers, timeout=10)
+            else:
+                response = self.post(target, data=data, headers=request_headers, timeout=10)
+            return {
+                "body": response.text or "",
+                "headers": getattr(response, "headers", {}) or {},
+                "status_code": response.status_code,
+            }
+        except Exception:
+            return self._curl_request(target, headers=request_headers, data=data)
+
+    def _curl_request(self, url, headers=None, data=None):
+        command = ["curl", "-L", "--silent", "--show-error", "-D", "-", url]
+        for key, value in (headers or {}).items():
+            command.extend(["-H", f"{key}: {value}"])
+        if data is not None:
+            command.extend(["-X", "POST", "--data", data])
+        completed = subprocess.run(command, capture_output=True, text=True, check=True, timeout=20)
+        raw = completed.stdout or ""
+        marker = "\r\n\r\n" if "\r\n\r\n" in raw else "\n\n"
+        chunks = [chunk for chunk in raw.split(marker) if chunk.strip()]
+        header_block = ""
+        body = ""
+        for index, chunk in enumerate(chunks):
+            if chunk.lstrip().startswith("HTTP/"):
+                header_block = chunk
+                body = marker.join(chunks[index + 1:]) if index + 1 < len(chunks) else ""
+        if not header_block and chunks:
+            header_block = chunks[0]
+            body = marker.join(chunks[1:]) if len(chunks) > 1 else ""
+        header_lines = header_block.splitlines()
+        status_line = header_lines[0] if header_lines else ""
+        matched = re.search(r"HTTP/\S+\s+(\d+)", status_line)
+        status_code = int(matched.group(1)) if matched else 200
+        parsed_headers = {}
+        for line in header_lines[1:]:
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            low_key = key.strip().lower()
+            clean_value = value.strip()
+            existing = parsed_headers.get(low_key)
+            if existing is None:
+                parsed_headers[low_key] = clean_value
+            elif isinstance(existing, list):
+                existing.append(clean_value)
+            else:
+                parsed_headers[low_key] = [existing, clean_value]
+        return {"body": body, "headers": parsed_headers, "status_code": status_code}
 
     def _get_set_cookies(self, headers):
         raw = headers.get("set-cookie") or headers.get("Set-Cookie") or []
@@ -354,6 +397,8 @@ class Spider(BaseSpider):
             api_res = self._request_with_headers(
                 self._build_url("/jx/api.php"),
                 headers={
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "Accept": "*/*",
                     "Referer": player_page,
                     "Origin": self.host,
                     "X-Requested-With": "XMLHttpRequest",

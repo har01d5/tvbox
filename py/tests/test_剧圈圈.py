@@ -1,6 +1,7 @@
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from requests.exceptions import ConnectionError
 from unittest.mock import patch
 
 
@@ -171,6 +172,34 @@ class TestJuQuanQuanSpider(unittest.TestCase):
         self.assertEqual(mock_fetch.call_count, 1)
         self.assertEqual(mock_post.call_count, 1)
 
+    @patch.object(Spider, "_curl_request")
+    @patch.object(Spider, "fetch")
+    def test_request_with_headers_falls_back_to_curl_on_get_error(self, mock_fetch, mock_curl_request):
+        mock_fetch.side_effect = ConnectionError("dns failed")
+        mock_curl_request.return_value = {"body": "<html>ok</html>", "headers": {"set-cookie": ["a=b; Path=/"]}, "status_code": 200}
+
+        result = self.spider._request_with_headers("https://www.jqqzx.cc/play/62215-5-1.html")
+
+        self.assertEqual(result["body"], "<html>ok</html>")
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(mock_curl_request.call_count, 1)
+
+    @patch.object(Spider, "_curl_request")
+    @patch.object(Spider, "post")
+    def test_request_with_headers_falls_back_to_curl_on_post_error(self, mock_post, mock_curl_request):
+        mock_post.side_effect = ConnectionError("dns failed")
+        mock_curl_request.return_value = {"body": '{"code":200}', "headers": {}, "status_code": 200}
+
+        result = self.spider._request_with_headers(
+            "https://www.jqqzx.cc/jx/api.php",
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            data="vid=demo",
+        )
+
+        self.assertEqual(result["body"], '{"code":200}')
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(mock_curl_request.call_count, 1)
+
     @patch.object(Spider, "_request_with_headers")
     def test_player_content_returns_direct_media_url(self, mock_request_with_headers):
         mock_request_with_headers.return_value = {
@@ -201,10 +230,21 @@ class TestJuQuanQuanSpider(unittest.TestCase):
                 "status_code": 200,
             },
         ]
-        self.spider._decode_url = lambda value: "https://video.example/fallback.m3u8"
+        def decode_stub(value):
+            if value == "error://apiRes_dummy":
+                return "https://video.example/fallback.m3u8"
+            return ""
+
+        self.spider._decode_url = decode_stub
         result = self.spider.playerContent("线路A", "play/123-1-1", {})
         self.assertEqual(result["parse"], 0)
         self.assertEqual(result["url"], "https://video.example/fallback.m3u8")
+        api_call = mock_request_with_headers.call_args_list[2]
+        self.assertEqual(api_call.args[0], "https://www.jqqzx.cc/jx/api.php")
+        self.assertEqual(api_call.kwargs["data"], "vid=https%3A//middle.example/embed%3Fid%3D1")
+        self.assertEqual(api_call.kwargs["headers"]["Content-Type"], "application/x-www-form-urlencoded; charset=UTF-8")
+        self.assertEqual(api_call.kwargs["headers"]["Accept"], "*/*")
+        self.assertEqual(api_call.kwargs["headers"]["X-Requested-With"], "XMLHttpRequest")
 
     @patch.object(Spider, "_request_with_headers")
     def test_player_content_falls_back_to_play_page_when_player_data_missing(self, mock_request_with_headers):
