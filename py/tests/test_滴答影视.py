@@ -169,6 +169,14 @@ class TestDidaSpider(unittest.TestCase):
         result = self.spider.playerContent("播放线路", "/play/111-1-1.html", {})
         self.assertEqual(result, {"parse": 0, "playUrl": "", "url": ""})
 
+    def test_home_content_keeps_reference_filter_values(self):
+        movie_filters = self.spider.homeContent(False)["filters"]["1"]
+        self.assertIn({"n": "动作", "v": "动作"}, movie_filters[0]["value"])
+        self.assertIn({"n": "香港", "v": "香港"}, movie_filters[1]["value"])
+        self.assertIn({"n": "2025", "v": "2025"}, movie_filters[2]["value"])
+        self.assertIn({"n": "粤语", "v": "粤语"}, movie_filters[3]["value"])
+        self.assertEqual(movie_filters[4]["value"][1], {"n": "人气", "v": "hits"})
+
 
 if __name__ == "__main__":
     unittest.main()
