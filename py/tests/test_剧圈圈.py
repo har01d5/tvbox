@@ -1,6 +1,7 @@
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,60 @@ class TestJuQuanQuanSpider(unittest.TestCase):
                 }
             ],
         )
+
+    def test_parse_cards_extracts_compact_vod_ids(self):
+        html = """
+        <a class="module-poster-item module-item" href="/vod/123.html">
+          <img data-original="/cover.jpg" />
+          <div class="module-poster-item-title">示例影片</div>
+          <div class="module-item-note">更新至1集</div>
+        </a>
+        """
+        self.assertEqual(
+            self.spider._parse_cards(html),
+            [
+                {
+                    "vod_id": "vod/123",
+                    "vod_name": "示例影片",
+                    "vod_pic": "https://www.jqqzx.cc/cover.jpg",
+                    "vod_remarks": "更新至1集",
+                }
+            ],
+        )
+
+    @patch.object(Spider, "_request_html")
+    def test_home_video_content_limits_recommendations(self, mock_request_html):
+        mock_request_html.return_value = "".join(
+            f'<a class="module-poster-item module-item" href="/vod/{index}.html"><div class="module-poster-item-title">影片{index}</div></a>'
+            for index in range(1, 45)
+        )
+        result = self.spider.homeVideoContent()
+        self.assertEqual(len(result["list"]), 40)
+        self.assertEqual(result["list"][0]["vod_id"], "vod/1")
+
+    @patch.object(Spider, "_request_html")
+    def test_category_content_builds_page_result(self, mock_request_html):
+        mock_request_html.return_value = """
+        <a class="module-poster-item module-item" href="/vod/456.html">
+          <div class="module-poster-item-title">分类影片</div>
+        </a>
+        """
+        result = self.spider.categoryContent("juji", "2", False, {})
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.jqqzx.cc/type/juji/page/2.html")
+        self.assertEqual(result["page"], 2)
+        self.assertEqual(result["pagecount"], 3)
+        self.assertEqual(result["list"][0]["vod_id"], "vod/456")
+
+    @patch.object(Spider, "_request_html")
+    def test_search_content_uses_suggest_api(self, mock_request_html):
+        mock_request_html.return_value = '{"list":[{"id":"777","name":"搜索结果","pic":"/pic.jpg"}]}'
+        result = self.spider.searchContent("繁花", False, "1")
+        self.assertEqual(
+            mock_request_html.call_args.args[0],
+            "https://www.jqqzx.cc/index.php/ajax/suggest?mid=1&wd=%E7%B9%81%E8%8A%B1",
+        )
+        self.assertEqual(result["list"][0]["vod_id"], "vod/777")
+        self.assertEqual(result["pagecount"], 1)
 
 
 if __name__ == "__main__":
