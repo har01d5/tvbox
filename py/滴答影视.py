@@ -1,6 +1,8 @@
 # coding=utf-8
 import json
+import re
 import sys
+from urllib.parse import quote
 
 from base.spider import Spider as BaseSpider
 
@@ -112,3 +114,68 @@ class Spider(BaseSpider):
             f"{values.get('year', '')}"
         )
         return self._build_url(path)
+
+    def _request_html(self, path_or_url, referer=None):
+        target = path_or_url if str(path_or_url).startswith("http") else self._build_url(path_or_url)
+        headers = dict(self.headers)
+        headers["Referer"] = referer or self.headers["Referer"]
+        response = self.fetch(target, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return ""
+        return response.text or ""
+
+    def _clean_text(self, text):
+        return re.sub(r"\s+", " ", str(text or "").replace("\xa0", " ")).strip()
+
+    def _parse_cards(self, html):
+        root = self.html(html)
+        if root is None:
+            return []
+        items = []
+        seen = set()
+        for card in root.xpath("//*[contains(@class,'myui-vodlist__box')]"):
+            href = ((card.xpath(".//*[contains(@class,'title')]//a[@href][1]/@href") or [""])[0]).strip()
+            title = (
+                ((card.xpath(".//*[contains(@class,'title')]//a[@title][1]/@title") or [""])[0]).strip()
+                or self._clean_text("".join(card.xpath(".//*[contains(@class,'title')]//a[1]//text()")))
+            )
+            pic = (
+                ((card.xpath(".//*[contains(@class,'lazyload')][1]/@data-original") or [""])[0]).strip()
+                or ((card.xpath(".//*[contains(@class,'lazyload')][1]/@src") or [""])[0]).strip()
+                or ((card.xpath(".//img[1]/@data-original") or [""])[0]).strip()
+                or ((card.xpath(".//img[1]/@src") or [""])[0]).strip()
+            )
+            remarks = self._clean_text("".join(card.xpath(".//*[contains(@class,'pic-text')][1]//text()")))
+            vod_id = self._build_url(href)
+            if not vod_id or not title or vod_id in seen:
+                continue
+            seen.add(vod_id)
+            items.append(
+                {
+                    "vod_id": vod_id,
+                    "vod_name": title,
+                    "vod_pic": self._build_url(pic),
+                    "vod_remarks": remarks,
+                }
+            )
+        return items
+
+    def categoryContent(self, tid, pg, filter, extend):
+        page = int(pg)
+        items = self._parse_cards(self._request_html(self._build_category_url(tid, pg, extend)))
+        return {
+            "list": items,
+            "page": page,
+            "pagecount": page + 1 if items else page,
+            "limit": 12,
+            "total": page * 12 + len(items),
+        }
+
+    def searchContent(self, key, quick, pg="1"):
+        page = int(pg)
+        keyword = self._stringify(key).strip()
+        if not keyword:
+            return {"page": page, "pagecount": 0, "total": 0, "list": []}
+        url = f"{self.host}/search/-------------.html?wd={quote(keyword)}"
+        items = self._parse_cards(self._request_html(url))
+        return {"page": page, "pagecount": page + 1 if items else page, "total": len(items), "list": items}
