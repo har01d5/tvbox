@@ -92,3 +92,105 @@ class TestCupfoxSpider(unittest.TestCase):
     def test_decode2_recovers_shifted_text(self):
         encoded = "QXdCQ2tE"
         self.assertEqual(self.spider._decode2(encoded), "P0")
+
+    def test_home_content_and_home_video_content_parse_cards(self):
+        html = """
+        <html>
+          <nav class="bm-item-list">
+            <a href="/type/1.html">电影</a>
+            <a href="/type/2.html">电视剧</a>
+          </nav>
+          <div class="mobile-main">
+            <div class="panel">
+              <div class="tab-content">
+                <div class="movie-list-item">
+                  <a href="/movie/foo.html" title="首页片"></a>
+                  <img class="Lazy" data-original="/img/foo.jpg" />
+                  <span class="movie-item-note">更新至1集</span>
+                </div>
+                <div class="movie-list-item">
+                  <a href="/movie/foo.html" title="首页片"></a>
+                  <img class="Lazy" data-original="/img/foo.jpg" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </html>
+        """
+        self.spider._request_with_firewall = lambda url: html
+        home = self.spider.homeContent(False)
+        videos = self.spider.homeVideoContent()
+
+        self.assertEqual(
+            home["class"],
+            [{"type_id": "1", "type_name": "电影"}, {"type_id": "2", "type_name": "电视剧"}],
+        )
+        self.assertEqual(len(videos["list"]), 1)
+        self.assertEqual(videos["list"][0]["vod_id"], "detail/foo")
+
+    def test_category_and_search_content_return_lists_without_pagecount(self):
+        category_html = """
+        <div class="movie-list-item">
+          <a href="/movie/c1.html" title="分类片"></a>
+          <img class="Lazy" data-original="/cate.jpg" />
+          <span class="movie-item-score">9.0</span>
+        </div>
+        """
+        search_html = """
+        <div class="vod-search-list">
+          <div class="box">
+            <a class="cover-link" href="/movie/s1.html"></a>
+            <img class="Lazy" data-original="/search.jpg" />
+            <div class="movie-title">搜索片</div>
+            <div class="meta getop">搜索备注</div>
+          </div>
+        </div>
+        """
+
+        self.spider._request_with_firewall = lambda url: category_html if "/type/" in url else search_html
+        category = self.spider.categoryContent("1", "2", False, {})
+        search = self.spider.searchContent("繁花", False, "3")
+
+        self.assertEqual(category["page"], 2)
+        self.assertEqual(category["limit"], 20)
+        self.assertNotIn("pagecount", category)
+        self.assertEqual(category["list"][0]["vod_id"], "detail/c1")
+        self.assertEqual(search["page"], 3)
+        self.assertEqual(search["list"][0]["vod_remarks"], "搜索备注")
+        self.assertNotIn("pagecount", search)
+
+    def test_detail_content_builds_play_sources(self):
+        html = """
+        <h1 class="movie-title">详情标题</h1>
+        <div class="poster"><img src="/poster.jpg" /></div>
+        <div class="summary detailsTxt">这是简介<span class="ectogg">展开</span></div>
+        <div class="scroll-content"><a>2026</a></div>
+        <div class="info-data">导演<a>张导</a><a>李导</a></div>
+        <div class="info-data">演员<a>甲</a><a>乙</a></div>
+        <div class="play_source_tab">
+          <div class="swiper-slide">线路一</div>
+          <div class="swiper-slide">线路二</div>
+        </div>
+        <div class="play_list_box">
+          <ul class="content_playlist">
+            <li><a href="/play/p1.html">第1集</a></li>
+            <li><a href="/play/p2.html">第2集</a></li>
+          </ul>
+        </div>
+        <div class="play_list_box">
+          <ul class="content_playlist">
+            <li><a href="/play/p3.html">正片</a></li>
+          </ul>
+        </div>
+        """
+        self.spider._request_with_firewall = lambda url: html
+        detail = self.spider.detailContent(["detail/d1"])
+        vod = detail["list"][0]
+
+        self.assertEqual(vod["vod_name"], "详情标题")
+        self.assertEqual(vod["vod_year"], "2026")
+        self.assertEqual(vod["vod_director"], "张导,李导")
+        self.assertEqual(vod["vod_actor"], "甲,乙")
+        self.assertEqual(vod["vod_play_from"], "线路一$$$线路二")
+        self.assertIn("第1集$play/p1", vod["vod_play_url"])
+        self.assertIn("正片$play/p3", vod["vod_play_url"])

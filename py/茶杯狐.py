@@ -163,3 +163,184 @@ class Spider(BaseSpider):
         for index in range(1, len(raw), 3):
             result += lookup.get(raw[index], raw[index])
         return result
+
+    def _node_text(self, value):
+        return re.sub(r"\s+", " ", str(value or "")).strip()
+
+    def _pick_first(self, values):
+        return values[0] if values else ""
+
+    def _full_url(self, path):
+        raw = str(path or "").strip()
+        if not raw:
+            return ""
+        if raw.startswith(("http://", "https://")):
+            return raw
+        if raw.startswith("//"):
+            return "https:" + raw
+        return self._build_url(raw)
+
+    def _parse_home_classes(self, html):
+        root = self.html(html or "")
+        if root is None:
+            return []
+        classes = []
+        for node in root.xpath("//nav[contains(@class,'bm-item-list')]//a[@href]"):
+            href = self._pick_first(node.xpath("./@href"))
+            matched = re.search(r"/type/(\d+)\.html", href or "")
+            name = self._node_text("".join(node.xpath(".//text()")))
+            if matched and name:
+                classes.append({"type_id": matched.group(1), "type_name": name})
+        return classes
+
+    def _parse_cards(self, html):
+        root = self.html(html or "")
+        if root is None:
+            return []
+        items = []
+        seen = set()
+        for node in root.xpath("//*[contains(@class,'movie-list-item')]"):
+            href = self._pick_first(node.xpath(".//a[1]/@href"))
+            vod_id = self._encode_detail_id(href)
+            if not vod_id or vod_id in seen:
+                continue
+            name = self._node_text(
+                self._pick_first(node.xpath(".//a[1]/@title")) or "".join(node.xpath(".//a[1]//text()"))
+            )
+            pic = self._full_url(
+                self._pick_first(node.xpath(".//*[contains(@class,'Lazy')][1]/@data-original"))
+                or self._pick_first(node.xpath(".//*[contains(@class,'Lazy')][1]/@src"))
+            )
+            note = self._node_text("".join(node.xpath(".//*[contains(@class,'movie-item-note')][1]//text()")))
+            if not note:
+                note = self._node_text("".join(node.xpath(".//*[contains(@class,'movie-item-score')][1]//text()")))
+            if name:
+                seen.add(vod_id)
+                items.append(
+                    {"vod_id": vod_id, "vod_name": name, "vod_pic": pic, "vod_remarks": note}
+                )
+        return items
+
+    def _parse_search_cards(self, html):
+        root = self.html(html or "")
+        if root is None:
+            return []
+        items = []
+        for node in root.xpath("//*[contains(@class,'vod-search-list')]//*[contains(@class,'box')]"):
+            href = self._pick_first(node.xpath(".//a[contains(@class,'cover-link')][1]/@href"))
+            vod_id = self._encode_detail_id(href)
+            name = self._node_text("".join(node.xpath(".//*[contains(@class,'movie-title')][1]//text()")))
+            pic = self._full_url(
+                self._pick_first(node.xpath(".//*[contains(@class,'Lazy')][1]/@data-original"))
+                or self._pick_first(node.xpath(".//*[contains(@class,'Lazy')][1]/@src"))
+            )
+            note = self._node_text("".join(node.xpath(".//*[contains(@class,'movie-item-note')][1]//text()")))
+            if not note:
+                note = self._node_text(
+                    "".join(node.xpath(".//*[contains(@class,'meta') and contains(@class,'getop')][1]//text()"))
+                )
+            if vod_id and name:
+                items.append(
+                    {"vod_id": vod_id, "vod_name": name, "vod_pic": pic, "vod_remarks": note}
+                )
+        return items
+
+    def homeContent(self, filter):
+        html = self._request_with_firewall(self.host)
+        return {"class": self._parse_home_classes(html)}
+
+    def homeVideoContent(self):
+        html = self._request_with_firewall(self.host)
+        return {"list": self._parse_cards(html)[: self.page_limit]}
+
+    def categoryContent(self, tid, pg, filter, extend):
+        page = int(pg)
+        html = self._request_with_firewall(self._build_url(f"/type/{tid}-{page}.html"))
+        items = self._parse_cards(html)
+        return {"page": page, "limit": self.page_limit, "total": page * len(items), "list": items}
+
+    def searchContent(self, key, quick, pg="1"):
+        page = int(pg)
+        keyword = self._node_text(key)
+        if not keyword:
+            return {"page": page, "total": 0, "list": []}
+        html = self._request_with_firewall(self._build_url(f"/search/{keyword}----------{page}---.html"))
+        items = self._parse_search_cards(html)
+        if quick:
+            items = items[:10]
+        return {"page": page, "limit": self.page_limit, "total": page * len(items), "list": items}
+
+    def detailContent(self, ids):
+        result = {"list": []}
+        for vod_id in ids:
+            url = self._decode_detail_id(vod_id)
+            if not url:
+                continue
+            root = self.html(self._request_with_firewall(url) or "")
+            if root is None:
+                continue
+            lines = []
+            tabs = root.xpath("//*[contains(@class,'play_source_tab')]//*[contains(@class,'swiper-slide')]")
+            for index, box in enumerate(root.xpath("//*[contains(@class,'play_list_box')]")):
+                from_name = ""
+                if index < len(tabs):
+                    from_name = self._node_text("".join(tabs[index].xpath(".//text()")))
+                if not from_name:
+                    from_name = f"线路{index + 1}"
+                episodes = []
+                for anchor in box.xpath(".//*[contains(@class,'content_playlist')]//a[@href]"):
+                    name = self._node_text("".join(anchor.xpath(".//text()")))
+                    play_id = self._encode_play_id(self._pick_first(anchor.xpath("./@href")))
+                    if name and play_id:
+                        episodes.append(f"{name}${play_id}")
+                if episodes:
+                    lines.append((from_name, "#".join(episodes)))
+            summary_nodes = root.xpath("//*[contains(@class,'summary') and contains(@class,'detailsTxt')][1]")
+            vod_content = ""
+            if summary_nodes:
+                summary = summary_nodes[0]
+                texts = []
+                for text in summary.xpath(".//text()[not(ancestor::*[contains(@class,'ectogg')])]"):
+                    cleaned = self._node_text(text)
+                    if cleaned:
+                        texts.append(cleaned)
+                vod_content = self._node_text(" ".join(texts))
+            years = [
+                self._node_text(text)
+                for text in root.xpath("//*[contains(@class,'scroll-content')]//a/text()")
+            ]
+            year = next((value for value in years if re.match(r"^\d{4}$", value)), "")
+            result["list"].append(
+                {
+                    "vod_id": vod_id,
+                    "vod_name": self._node_text(
+                        "".join(root.xpath("//h1[contains(@class,'movie-title')][1]//text()"))
+                    ),
+                    "vod_pic": self._full_url(
+                        self._pick_first(root.xpath("//*[contains(@class,'poster')]//img[1]/@src"))
+                    ),
+                    "vod_content": vod_content,
+                    "vod_year": year,
+                    "vod_director": ",".join(
+                        [
+                            self._node_text(text)
+                            for text in root.xpath(
+                                "//*[contains(@class,'info-data')][contains(.,'导演')]//a/text()"
+                            )
+                            if self._node_text(text)
+                        ]
+                    ),
+                    "vod_actor": ",".join(
+                        [
+                            self._node_text(text)
+                            for text in root.xpath(
+                                "//*[contains(@class,'info-data')][contains(.,'演员')]//a/text()"
+                            )
+                            if self._node_text(text)
+                        ]
+                    ),
+                    "vod_play_from": "$$$".join([item[0] for item in lines]),
+                    "vod_play_url": "$$$".join([item[1] for item in lines]),
+                }
+            )
+        return result
