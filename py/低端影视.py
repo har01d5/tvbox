@@ -274,6 +274,7 @@ class Spider(BaseSpider):
             if panel_id not in ("quark", "xunlei", "baidu"):
                 continue
             entries = []
+            seen_links = set()
             for button in panel.xpath(".//button[@onclick]"):
                 onclick = (button.xpath("./@onclick") or [""])[0]
                 matched = re.search(r"atob\('([^']+)'\)", onclick)
@@ -284,10 +285,11 @@ class Spider(BaseSpider):
                 except Exception:
                     continue
                 title = self._clean_text("".join(button.xpath(".//text()"))) or panel_id
-                if link:
+                if link and link not in seen_links:
+                    seen_links.add(link)
                     entries.append(f"{title}${link}")
             if entries:
-                groups.append({"from": panel_id, "urls": "#".join(dict.fromkeys(entries))})
+                groups.append({"from": panel_id, "urls": "#".join(entries)})
         return groups
 
     def _parse_detail_page(self, html, vod_id):

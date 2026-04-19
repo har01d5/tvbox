@@ -172,6 +172,16 @@ class TestDDYSSpider(unittest.TestCase):
         self.assertIn("夸克查看$https://pan.quark.cn/s/abc123", vod["vod_play_url"])
         self.assertIn("百度查看$https://pan.baidu.com/s/demo", vod["vod_play_url"])
 
+    def test_extract_pan_sources_deduplicates_same_link_with_different_labels(self):
+        html = """
+        <div class="download-type-content" id="download-type-quark">
+          <button onclick="trackAndOpenResource(atob('aHR0cHM6Ly9wYW4ucXVhcmsuY24vcy8xNGE0MDVhOWJiMGQ='))">查看</button>
+          <button onclick="trackAndOpenResource(atob('aHR0cHM6Ly9wYW4ucXVhcmsuY24vcy8xNGE0MDVhOWJiMGQ='))">一键复制</button>
+        </div>
+        """
+        groups = self.spider._extract_pan_sources(html)
+        self.assertEqual(groups, [{"from": "quark", "urls": "查看$https://pan.quark.cn/s/14a405a9bb0d"}])
+
     @patch.object(Spider, "_request_html")
     def test_detail_content_reads_detail_page_and_returns_single_vod(self, mock_request_html):
         mock_request_html.return_value = """
