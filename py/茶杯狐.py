@@ -1,9 +1,10 @@
 # coding=utf-8
 import base64
+import json
 import random
 import re
 import sys
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from base.spider import Spider as BaseSpider
 
@@ -80,3 +81,85 @@ class Spider(BaseSpider):
                 + self.firewall_chars[random.randint(0, 61)]
             )
         return base64.b64encode(encoded.encode("utf-8")).decode("utf-8")
+
+    def _request_text(self, url, method="GET", body=None, headers=None):
+        request_headers = dict(self.headers)
+        if headers:
+            request_headers.update(headers)
+        if method == "POST":
+            response = self.post(url, data=body, headers=request_headers, timeout=15)
+        else:
+            response = self.fetch(url, headers=request_headers, timeout=15)
+        return {
+            "status_code": response.status_code,
+            "text": response.text or "",
+            "headers": dict(response.headers or {}),
+        }
+
+    def _request_with_firewall(self, url):
+        cookie_jar = {}
+        first = self._request_text(url)
+        self._merge_set_cookie(cookie_jar, first["headers"].get("set-cookie", []))
+        if not re.search(r"人机验证|verifyBox", first["text"] or ""):
+            if int(first["status_code"] or 0) != 200:
+                raise ValueError(f"HTTP {first['status_code']} @ {url}")
+            return first["text"]
+
+        token_raw = self._extract_firewall_token(first["text"])
+        if not token_raw:
+            return first["text"]
+
+        verify_body = (
+            "value="
+            + quote(self._cupfox_firewall_encrypt(url))
+            + "&token="
+            + quote(self._cupfox_firewall_encrypt(token_raw))
+        )
+        verify_headers = {
+            "Referer": url,
+            "Origin": self.host,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        cookie_text = self._cookie_header(cookie_jar)
+        if cookie_text:
+            verify_headers["Cookie"] = cookie_text
+        verify = self._request_text(
+            self.host + "/robot.php",
+            method="POST",
+            body=verify_body,
+            headers=verify_headers,
+        )
+        self._merge_set_cookie(cookie_jar, verify["headers"].get("set-cookie", []))
+
+        second_headers = {}
+        solved_cookie = self._cookie_header(cookie_jar)
+        if solved_cookie:
+            second_headers["Cookie"] = solved_cookie
+        second = self._request_text(url, headers=second_headers)
+        if int(second["status_code"] or 0) != 200:
+            raise ValueError(f"HTTP {second['status_code']} @ {url}")
+        return second["text"]
+
+    def _extract_player_data(self, html_text):
+        matched = re.search(r"player_aaaa\s*=\s*(\{[\s\S]*?\})\s*;?", str(html_text or ""))
+        if not matched:
+            return None
+        try:
+            return json.loads(matched.group(1))
+        except Exception:
+            return None
+
+    def _decode2(self, encoded):
+        if not encoded:
+            return ""
+        lookup = {}
+        for index, char in enumerate(self.firewall_chars):
+            lookup[char] = self.firewall_chars[(index + 59) % 62]
+        try:
+            raw = base64.b64decode(str(encoded).encode("utf-8")).decode("utf-8")
+        except Exception:
+            return ""
+        result = ""
+        for index in range(1, len(raw), 3):
+            result += lookup.get(raw[index], raw[index])
+        return result

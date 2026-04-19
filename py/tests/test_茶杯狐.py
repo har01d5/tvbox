@@ -48,3 +48,47 @@ class TestCupfoxSpider(unittest.TestCase):
     def test_firewall_encrypt_returns_base64_text(self, _mock_randint):
         encoded = self.spider._cupfox_firewall_encrypt("PX")
         self.assertEqual(base64.b64decode(encoded).decode("utf-8"), "PwXh7w")
+
+    def test_request_with_firewall_retries_after_robot_verification(self):
+        calls = []
+
+        def fake_request(url, method="GET", body=None, headers=None):
+            calls.append({"url": url, "method": method, "body": body, "headers": headers or {}})
+            if len(calls) == 1:
+                return {
+                    "status_code": 200,
+                    "text": '<div id="verifyBox"></div><script>var token = encrypt("seed");</script>',
+                    "headers": {"set-cookie": ["session=abc; Path=/"]},
+                }
+            if "robot.php" in url:
+                self.assertEqual(method, "POST")
+                self.assertIn("Cookie", headers)
+                self.assertIn("value=", body)
+                self.assertIn("token=", body)
+                return {
+                    "status_code": 200,
+                    "text": "ok",
+                    "headers": {"set-cookie": ["shield=passed; Path=/"]},
+                }
+            return {
+                "status_code": 200,
+                "text": "<html><title>ok</title></html>",
+                "headers": {},
+            }
+
+        self.spider._request_text = fake_request
+        html = self.spider._request_with_firewall("https://www.cupfox.ai/search/test----------1---.html")
+
+        self.assertEqual(html, "<html><title>ok</title></html>")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[2]["headers"]["Cookie"], "session=abc; shield=passed")
+
+    def test_extract_player_data_reads_embedded_json(self):
+        html = '<script>player_aaaa={"url":"vid-1","from":"lineA","server":"no"};</script>'
+        data = self.spider._extract_player_data(html)
+        self.assertEqual(data["url"], "vid-1")
+        self.assertEqual(data["from"], "lineA")
+
+    def test_decode2_recovers_shifted_text(self):
+        encoded = "QXdCQ2tE"
+        self.assertEqual(self.spider._decode2(encoded), "P0")
