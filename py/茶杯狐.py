@@ -481,11 +481,12 @@ class Spider(BaseSpider):
             if not vid:
                 raise ValueError("missing player url")
 
-            muiplayer_url = self.host + "/foxplay/muiplayer.php?vid=" + quote(vid)
+            encoded_vid = quote(vid, safe="")
+            muiplayer_url = self.host + "/foxplay/muiplayer.php?vid=" + encoded_vid
             api = self._request_text(
                 self.host + "/foxplay/api.php",
                 method="POST",
-                body="vid=" + quote(vid),
+                body="vid=" + encoded_vid,
                 headers={
                     "User-Agent": self.headers["User-Agent"],
                     "Referer": muiplayer_url,

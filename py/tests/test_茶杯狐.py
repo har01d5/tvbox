@@ -328,6 +328,28 @@ class TestCupfoxSpider(unittest.TestCase):
         self.assertEqual(result["parse"], 1)
         self.assertEqual(result["url"], "https://www.cupfox.ai/play/p77.html")
 
+    def test_player_content_urlencodes_vid_for_api_request(self):
+        play_html = '<script>player_aaaa={"url":"a+b/c==","from":"line","server":"no"};</script>'
+        calls = []
+
+        def fake_request(url, method="GET", body=None, headers=None):
+            calls.append({"url": url, "method": method, "body": body, "headers": headers or {}})
+            if "foxplay/api.php" in url:
+                return {
+                    "status_code": 200,
+                    "text": '{"data":{"url":"https://media.example/video.m3u8","urlmode":0}}',
+                    "headers": {},
+                }
+            raise AssertionError(url)
+
+        self.spider._request_with_firewall = lambda url: play_html
+        self.spider._request_text = fake_request
+        result = self.spider.playerContent("线路一", "play/p88", [])
+
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(calls[0]["body"], "vid=a%2Bb%2Fc%3D%3D")
+        self.assertIn("vid=a%2Bb%2Fc%3D%3D", calls[0]["headers"]["Referer"])
+
     def test_search_content_returns_empty_result_for_blank_keyword(self):
         self.assertEqual(self.spider.searchContent("", False, "1"), {"page": 1, "total": 0, "list": []})
 
