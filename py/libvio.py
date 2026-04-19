@@ -12,7 +12,7 @@ sys.path.append("..")
 class Spider(BaseSpider):
     def __init__(self):
         self.name = "LibVIO"
-        self.host = "https://libvio.site"
+        self.host = "https://www.libvio.la"
         self.headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -181,6 +181,13 @@ class Spider(BaseSpider):
                 seen.add(play_id)
                 episodes.append(f"{name}${play_id}")
 
+        netdisk_groups = self._extract_netdisk_sources(html)
+        play_from = ["LibVIO"] if episodes else []
+        play_url = ["#".join(episodes)] if episodes else []
+        for group in netdisk_groups:
+            play_from.append(group["from"])
+            play_url.append(group["urls"])
+
         vod = {
             "vod_id": vod_id,
             "path": self._build_detail_request_url(vod_id),
@@ -189,8 +196,8 @@ class Spider(BaseSpider):
             "vod_tag": "",
             "vod_time": "",
             "vod_remarks": "",
-            "vod_play_from": "LibVIO",
-            "vod_play_url": "#".join(episodes),
+            "vod_play_from": "$$$".join(play_from),
+            "vod_play_url": "$$$".join(play_url),
             "type_name": self._extract_detail_field(detail_root, "类型"),
             "vod_content": self._extract_detail_field(detail_root, "简介"),
             "vod_year": self._extract_detail_field(detail_root, "年份"),
@@ -200,6 +207,33 @@ class Spider(BaseSpider):
             "vod_actor": self._extract_detail_field(detail_root, "主演", joiner=","),
         }
         return {"list": [vod]}
+
+    def _extract_netdisk_sources(self, html):
+        root = self.html(html)
+        if root is None:
+            return []
+
+        groups = []
+        for panel in root.xpath("//*[contains(@class,'netdisk-panel')]"):
+            heading = self._clean_text("".join(panel.xpath(".//h3[1]//text()")))
+            matched = re.search(r"\(([^()]+)\)", heading)
+            line_name = self._clean_text(matched.group(1) if matched else heading.replace("视频下载", "")) or "网盘资源"
+
+            entries = []
+            seen_links = set()
+            for anchor in panel.xpath(".//a[contains(@class,'netdisk-item')]"):
+                href = ((anchor.xpath("./@href") or [""])[0]).strip()
+                url_text = self._clean_text("".join(anchor.xpath(".//*[contains(@class,'netdisk-url')][1]//text()")))
+                link = url_text or href
+                if not link or link in seen_links:
+                    continue
+                seen_links.add(link)
+                title = self._clean_text("".join(anchor.xpath(".//*[contains(@class,'netdisk-name')][1]//text()"))) or line_name
+                entries.append(f"{title}${link}")
+
+            if entries:
+                groups.append({"from": line_name, "urls": "#".join(entries)})
+        return groups
 
     def homeVideoContent(self):
         html = self._request_html("/", expect_xpath="//*[contains(@class,'stui-vodlist__box')]")
@@ -256,6 +290,12 @@ class Spider(BaseSpider):
         return self._request_html(f"/static/player/{source}.js", referer=self.host + "/")
 
     def playerContent(self, flag, id, vipFlags):
+        raw_id = str(id or "").strip()
+        if raw_id.startswith(("https://", "http://")) and any(
+            token in raw_id for token in ("drive.uc.cn", "pan.quark.cn", "pan.baidu.com", "alipan.com", "aliyundrive.com")
+        ):
+            return {"parse": 0, "playUrl": "", "url": raw_id}
+
         play_page_url = self._build_play_request_url(id)
         detail_html = self._request_html(play_page_url, referer=self.host + "/")
         config = self._parse_player_config(detail_html)

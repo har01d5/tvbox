@@ -33,7 +33,7 @@ class TestLibVioSpider(unittest.TestCase):
                 {
                     "vod_id": "456",
                     "vod_name": "示例影片",
-                    "vod_pic": "https://libvio.site/cover.jpg",
+                    "vod_pic": "https://www.libvio.la/cover.jpg",
                     "vod_remarks": "更新至10集",
                 }
             ],
@@ -75,7 +75,7 @@ class TestLibVioSpider(unittest.TestCase):
         self.assertEqual(result["list"][0]["vod_id"], "333")
         self.assertEqual(result["list"][0]["vod_name"], "搜索影片")
 
-    def test_parse_detail_page_extracts_fields_and_filters_pan_sources(self):
+    def test_parse_detail_page_extracts_fields_and_preserves_pan_sources(self):
         html = """
         <div class="stui-content__thumb">
           <img data-original="/poster.jpg" />
@@ -98,11 +98,24 @@ class TestLibVioSpider(unittest.TestCase):
         <ul class="stui-content__playlist clearfix">
           <li><a href="/play/pan-1.html">网盘</a></li>
         </ul>
+        <div class="playlist-panel netdisk-panel">
+          <div class="panel-head netdisk-head">
+            <div class="netdisk-head-inner">
+              <h3>视频下载(UC)</h3>
+            </div>
+          </div>
+          <div class="netdisk-list">
+            <a class="netdisk-item" href="https://drive.uc.cn/s/e1532998c2bf4?public=1" target="_blank">
+              <span class="netdisk-name">合集</span>
+              <span class="netdisk-url">https://drive.uc.cn/s/e1532998c2bf4?public=1</span>
+            </a>
+          </div>
+        </div>
         """
         result = self.spider._parse_detail_page(html, "999")
         vod = result["list"][0]
         self.assertEqual(vod["vod_id"], "999")
-        self.assertEqual(vod["path"], "https://libvio.site/detail/999.html")
+        self.assertEqual(vod["path"], "https://www.libvio.la/detail/999.html")
         self.assertEqual(vod["vod_name"], "示例剧")
         self.assertEqual(vod["type_name"], "剧情")
         self.assertEqual(vod["vod_area"], "大陆")
@@ -110,8 +123,36 @@ class TestLibVioSpider(unittest.TestCase):
         self.assertEqual(vod["vod_director"], "张三")
         self.assertEqual(vod["vod_actor"], "李四,王五")
         self.assertEqual(vod["vod_content"], "一段剧情简介")
-        self.assertEqual(vod["vod_play_from"], "LibVIO")
-        self.assertEqual(vod["vod_play_url"], "第1集$999-1-1#第2集$999-1-2")
+        self.assertEqual(vod["vod_play_from"], "LibVIO$$$UC")
+        self.assertEqual(
+            vod["vod_play_url"],
+            "第1集$999-1-1#第2集$999-1-2$$$合集$https://drive.uc.cn/s/e1532998c2bf4?public=1",
+        )
+
+    def test_extract_netdisk_sources_deduplicates_same_link(self):
+        html = """
+        <div class="playlist-panel netdisk-panel">
+          <div class="panel-head netdisk-head">
+            <div class="netdisk-head-inner">
+              <h3>视频下载(UC)</h3>
+            </div>
+          </div>
+          <div class="netdisk-list">
+            <a class="netdisk-item" href="https://drive.uc.cn/s/e1532998c2bf4?public=1" target="_blank">
+              <span class="netdisk-name">合集</span>
+              <span class="netdisk-url">https://drive.uc.cn/s/e1532998c2bf4?public=1</span>
+            </a>
+            <a class="netdisk-item" href="https://drive.uc.cn/s/e1532998c2bf4?public=1" target="_blank">
+              <span class="netdisk-name">一键复制</span>
+              <span class="netdisk-url">https://drive.uc.cn/s/e1532998c2bf4?public=1</span>
+            </a>
+          </div>
+        </div>
+        """
+        self.assertEqual(
+            self.spider._extract_netdisk_sources(html),
+            [{"from": "UC", "urls": "合集$https://drive.uc.cn/s/e1532998c2bf4?public=1"}],
+        )
 
     @patch.object(Spider, "_request_html")
     def test_detail_content_builds_detail_request_url_from_vod_id(self, mock_request_html):
@@ -122,7 +163,7 @@ class TestLibVioSpider(unittest.TestCase):
         </ul>
         """
         result = self.spider.detailContent(["123"])
-        self.assertEqual(mock_request_html.call_args.args[0], "https://libvio.site/detail/123.html")
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.libvio.la/detail/123.html")
         self.assertEqual(result["list"][0]["vod_id"], "123")
 
     def test_extract_player_config_reads_json_assignment(self):
@@ -132,7 +173,7 @@ class TestLibVioSpider(unittest.TestCase):
 
     def test_extract_play_api_base_reads_player_js(self):
         body = 'var player={}; src="/player/api.php?url=";'
-        self.assertEqual(self.spider._extract_play_api_base(body), "https://libvio.site/player/api.php?url=")
+        self.assertEqual(self.spider._extract_play_api_base(body), "https://www.libvio.la/player/api.php?url=")
 
     @patch.object(Spider, "_request_html")
     def test_player_content_resolves_direct_api_url(self, mock_request_html):
@@ -144,12 +185,23 @@ class TestLibVioSpider(unittest.TestCase):
         result = self.spider.playerContent("LibVIO", "999-1-1", {})
         self.assertEqual(result["parse"], 0)
         self.assertEqual(result["url"], "https://video.example/final.m3u8")
-        self.assertEqual(result["header"]["Referer"], "https://libvio.site/")
+        self.assertEqual(result["header"]["Referer"], "https://www.libvio.la/")
 
     @patch.object(Spider, "_request_html")
     def test_player_content_returns_empty_for_pan_source(self, mock_request_html):
         mock_request_html.return_value = '<script>var player_x={"url":"abc","from":"kuake"};</script>'
         self.assertEqual(self.spider.playerContent("LibVIO", "999-1-1", {}), {"parse": 0, "playUrl": "", "url": ""})
+
+    def test_player_content_returns_direct_netdisk_link(self):
+        result = self.spider.playerContent("UC", "https://drive.uc.cn/s/e1532998c2bf4?public=1", {})
+        self.assertEqual(
+            result,
+            {
+                "parse": 0,
+                "playUrl": "",
+                "url": "https://drive.uc.cn/s/e1532998c2bf4?public=1",
+            },
+        )
 
 
 if __name__ == "__main__":
