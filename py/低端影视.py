@@ -157,6 +157,17 @@ class Spider(BaseSpider):
             return self.host + raw
         return self.host + "/" + raw
 
+    def _extract_site_path_id(self, href):
+        full = self._build_url(href)
+        matched = re.search(r"https?://[^/]+/(movie|series|variety|anime)/([^/?#]+)/?$", full)
+        if not matched:
+            return ""
+        return f"{matched.group(1)}/{matched.group(2)}"
+
+    def _build_detail_request_url(self, vod_id):
+        value = self._stringify(vod_id).strip().strip("/")
+        return self._build_url(value + "/") if value else ""
+
     def _build_category_url(self, tid, pg, extend):
         values = dict(self.filter_def.get(str(tid), {"cateId": str(tid)}))
         values.update(self._normalize_ext(extend))
@@ -201,7 +212,7 @@ class Spider(BaseSpider):
                 or ((node.xpath(".//img[1]/@data-src") or [""])[0]).strip()
             )
             remarks = self._clean_text("".join(node.xpath(".//*[contains(@class,'poster-badge')][1]//text()")))
-            vod_id = self._build_url(href)
+            vod_id = self._extract_site_path_id(href)
             if not vod_id or not title or vod_id in seen:
                 continue
             seen.add(vod_id)
@@ -332,7 +343,10 @@ class Spider(BaseSpider):
             vod_id = self._stringify(raw_id).strip()
             if not vod_id:
                 continue
-            vod = self._parse_detail_page(self._request_html(vod_id), vod_id)
+            request_url = self._build_detail_request_url(vod_id)
+            if not request_url:
+                continue
+            vod = self._parse_detail_page(self._request_html(request_url), vod_id)
             result["list"].append(vod)
         return result
 

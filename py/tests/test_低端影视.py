@@ -53,7 +53,7 @@ class TestDDYSSpider(unittest.TestCase):
             cards,
             [
                 {
-                    "vod_id": "https://ddys.io/movie/test-title/",
+                    "vod_id": "movie/test-title",
                     "vod_name": "测试电影",
                     "vod_pic": "https://ddys.io/poster.jpg",
                     "vod_remarks": "HD",
@@ -137,7 +137,7 @@ class TestDDYSSpider(unittest.TestCase):
         kwargs = mock_request_html.call_args.kwargs
         self.assertEqual(kwargs["method"], "POST")
         self.assertEqual(kwargs["data"], "q=%E7%B9%81%E8%8A%B1")
-        self.assertEqual(result["list"][0]["vod_id"], "https://ddys.io/anime/result/")
+        self.assertEqual(result["list"][0]["vod_id"], "anime/result")
         self.assertEqual(result["pagecount"], 2)
 
     def test_parse_detail_page_merges_direct_and_pan_sources(self):
@@ -158,7 +158,7 @@ class TestDDYSSpider(unittest.TestCase):
           </div>
         </html>
         """
-        vod = self.spider._parse_detail_page(html, "https://ddys.io/anime/demo/")
+        vod = self.spider._parse_detail_page(html, "anime/demo")
         self.assertEqual(vod["vod_name"], "低端示例")
         self.assertEqual(vod["vod_pic"], "https://ddys.io/poster-detail.jpg")
         self.assertEqual(vod["vod_year"], "2025")
@@ -188,9 +188,9 @@ class TestDDYSSpider(unittest.TestCase):
         <h1 class="text-xl md:text-3xl">详情标题</h1>
         <button onclick="switchSource(1, '/play/detail-demo', 'mp4')">直连</button>
         """
-        result = self.spider.detailContent(["https://ddys.io/movie/demo/"])
+        result = self.spider.detailContent(["movie/demo"])
         self.assertEqual(mock_request_html.call_args.args[0], "https://ddys.io/movie/demo/")
-        self.assertEqual(result["list"][0]["vod_id"], "https://ddys.io/movie/demo/")
+        self.assertEqual(result["list"][0]["vod_id"], "movie/demo")
         self.assertEqual(result["list"][0]["vod_name"], "详情标题")
         self.assertEqual(result["list"][0]["vod_play_from"], "直连")
         self.assertEqual(result["list"][0]["vod_play_url"], "全集$/play/detail-demo")
