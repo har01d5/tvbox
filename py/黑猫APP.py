@@ -3,6 +3,7 @@ import base64
 import json
 import sys
 from datetime import datetime
+from urllib.parse import unquote
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
@@ -261,6 +262,9 @@ class Spider(BaseSpider):
         config = self._get_line_config(name)
         return bool(config) and config.get("enabled") is False
 
+    def _player_headers(self):
+        return {"User-Agent": "Dalvik/2.1.0 (Linux; Android 14)"}
+
     def detailContent(self, ids):
         items = []
         for vod_id in ids:
@@ -319,3 +323,42 @@ class Spider(BaseSpider):
                 }
             )
         return {"list": items}
+
+    def playerContent(self, flag, id, vipFlags):
+        parts = str(id or "").split("@@", 2)
+        line_name = parts[0] if len(parts) > 0 else ""
+        mode = parts[1] if len(parts) > 1 else "direct"
+        payload = parts[2] if len(parts) > 2 else ""
+        if self._line_blocked(line_name):
+            return {"parse": 0, "jx": 0, "url": "", "header": {}}
+        if mode == "auto":
+            return {"parse": 0, "jx": 0, "url": "", "header": {}}
+        fields = payload.split(",", 4)
+        while len(fields) < 5:
+            fields.append("")
+        parse_api, play_url, token_with_prefix, player_parse_type, parse_type = fields
+        real_url = unquote(play_url)
+        token = token_with_prefix.replace("token+", "", 1)
+        if parse_type == "0":
+            return {"parse": 0, "jx": 0, "url": real_url, "header": self._player_headers()}
+        if parse_type == "2":
+            return {"parse": 1, "jx": 1, "url": parse_api + real_url, "header": self._player_headers()}
+        if player_parse_type == "2":
+            response = self.fetch(parse_api + real_url, headers=self._headers(), timeout=10, verify=False)
+            data = json.loads(response.text or "{}")
+            if data.get("url"):
+                return {"parse": 0, "jx": 0, "url": data.get("url", ""), "header": {}}
+        result = self._api_post(
+            "vodParse",
+            {
+                "parse_api": parse_api,
+                "url": self._aes_encrypt(real_url),
+                "player_parse_type": player_parse_type,
+                "token": token,
+            },
+        ) or {}
+        try:
+            inner = json.loads(result.get("json", "{}"))
+        except Exception:
+            inner = {}
+        return {"parse": 0, "jx": 0, "url": inner.get("url", ""), "header": {}}

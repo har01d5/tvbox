@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -189,6 +190,65 @@ class TestHeiMaoAppSpider(unittest.TestCase):
             "$$$备用$1线@@direct@@https://parser-b/?url=,https%3A%2F%2Fplay-b,token+tk-b,1,0"
             "$$$蓝光$高清线路12@@direct@@https://parser-c/?url=,https%3A%2F%2Fplay-c,token+tk-c,2,2",
         )
+
+    def test_player_content_returns_direct_url_for_parse_type_zero(self):
+        result = self.spider.playerContent(
+            "🐈‍⬛高清线路",
+            "高清线路1@@direct@@https://parser/?url=,https%3A%2F%2Fvideo.example%2Fraw.m3u8,token+abc,1,0",
+            "",
+        )
+        self.assertEqual(
+            result,
+            {
+                "parse": 0,
+                "jx": 0,
+                "url": "https://video.example/raw.m3u8",
+                "header": {"User-Agent": "Dalvik/2.1.0 (Linux; Android 14)"},
+            },
+        )
+
+    def test_player_content_returns_parser_url_for_parse_type_two(self):
+        result = self.spider.playerContent(
+            "🐈‍⬛高清线路",
+            "高清线路1@@direct@@https://parser/?url=,https%3A%2F%2Fvideo.example%2Fneed-jx.m3u8,token+abc,1,2",
+            "",
+        )
+        self.assertEqual(
+            result,
+            {
+                "parse": 1,
+                "jx": 1,
+                "url": "https://parser/?url=https://video.example/need-jx.m3u8",
+                "header": {"User-Agent": "Dalvik/2.1.0 (Linux; Android 14)"},
+            },
+        )
+
+    @patch.object(Spider, "fetch")
+    def test_player_content_uses_player_parse_type_two_direct_json(self, mock_fetch):
+        mock_fetch.return_value = SimpleNamespace(status_code=200, text='{"url":"https://video.example/direct.m3u8"}')
+        result = self.spider.playerContent(
+            "🐈‍⬛高清线路",
+            "高清线路1@@direct@@https://parser/?url=,https%3A%2F%2Fvideo.example%2Fwrapped,token+abc,2,1",
+            "",
+        )
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["jx"], 0)
+        self.assertEqual(result["url"], "https://video.example/direct.m3u8")
+
+    @patch.object(Spider, "_api_post")
+    def test_player_content_falls_back_to_vod_parse(self, mock_api_post):
+        mock_api_post.return_value = {"json": '{"url":"https://video.example/final.m3u8"}'}
+        result = self.spider.playerContent(
+            "🐈‍⬛高清线路",
+            "高清线路1@@direct@@https://parser/?url=,https%3A%2F%2Fvideo.example%2Fencrypted,token+abc,1,1",
+            "",
+        )
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["jx"], 0)
+        self.assertEqual(result["url"], "https://video.example/final.m3u8")
+        self.assertEqual(mock_api_post.call_args.args[0], "vodParse")
+        self.assertEqual(mock_api_post.call_args.args[1]["parse_api"], "https://parser/?url=")
+        self.assertEqual(mock_api_post.call_args.args[1]["token"], "abc")
 
 
 if __name__ == "__main__":
