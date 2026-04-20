@@ -1,3 +1,4 @@
+import json
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -22,3 +23,18 @@ class TestJingyuSpider(unittest.TestCase):
         import re
         encrypted = self.spider._aes_encrypt("hello")
         self.assertTrue(re.match(r'^[A-Za-z0-9+/=]+$', encrypted))
+
+    def test_api_post_decrypts_response(self):
+        payload = {"result": "ok"}
+        encrypted = self.spider._aes_encrypt(json.dumps(payload))
+
+        class FakeResponse:
+            status_code = 200
+            encoding = "utf-8"
+            def json(self):
+                return {"data": encrypted}
+
+        self.spider.post = lambda url, **kwargs: FakeResponse()
+        self.spider.host = "http://test.com"
+        result = self.spider._api_post("someEndpoint")
+        self.assertEqual(result, payload)

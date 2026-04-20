@@ -47,3 +47,22 @@ class Spider(BaseSpider):
         cipher = AES.new(key, AES.MODE_CBC, iv)
         decrypted = unpad(cipher.decrypt(raw), AES.block_size)
         return decrypted.decode("utf-8")
+
+    def _api_post(self, endpoint, payload=None):
+        if payload is None:
+            payload = {}
+        ep = f"/{endpoint}" if not endpoint.startswith("/") else endpoint
+        url = f"{self.host}{self.api_path}{ep}"
+        headers = {
+            "User-Agent": self.ua,
+            "Accept-Encoding": "gzip",
+        }
+        rsp = self.post(url, json=payload, headers=headers, timeout=15, verify=False)
+        data = rsp.json().get("data")
+        if not data:
+            return None
+        try:
+            return json.loads(self._aes_decrypt(data))
+        except Exception as e:
+            self.log(f"JSON解析失败: {e}")
+            return None
