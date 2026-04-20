@@ -130,3 +130,66 @@ class TestJingyuSpider(unittest.TestCase):
         self.assertEqual(len(ids), 2)
         self.assertIn("1", ids)
         self.assertIn("2", ids)
+
+    def test_detail_content_builds_play_lines(self):
+        detail_data = {
+            "vod": {
+                "vod_name": "测试影片",
+                "vod_pic": "http://pic.jpg",
+                "vod_remarks": "HD",
+                "vod_content": "简介",
+                "vod_actor": "演员张三",
+                "vod_director": "导演李四",
+                "vod_year": "2025",
+                "vod_area": "大陆",
+            },
+            "vod_play_list": [
+                {
+                    "player_info": {
+                        "show": "线路一",
+                        "parse": "http://parse.com/",
+                        "player_parse_type": "1",
+                        "parse_type": "1",
+                    },
+                    "urls": [
+                        {"name": "第1集", "url": "http://play/1", "token": "tok1"},
+                        {"name": "第2集", "url": "http://play/2", "token": "tok2"},
+                    ],
+                },
+            ],
+        }
+
+        self.spider._api_post = lambda ep, payload=None: detail_data if "vodDetail" in ep else None
+        self.spider.host = "http://test.com"
+        self.spider.init_data = {}
+        result = self.spider.detailContent(["123"])
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_name"], "测试影片")
+        self.assertEqual(vod["vod_year"], "2025年")
+        self.assertIn("线路一", vod["vod_play_from"])
+        self.assertIn("第1集$", vod["vod_play_url"])
+        self.assertIn("第2集$", vod["vod_play_url"])
+
+    def test_detail_content_filters_junk_lines(self):
+        detail_data = {
+            "vod": {"vod_name": "X", "vod_pic": "", "vod_remarks": "", "vod_content": "",
+                    "vod_actor": "", "vod_director": "", "vod_year": "", "vod_area": ""},
+            "vod_play_list": [
+                {
+                    "player_info": {"show": "防走丢群", "parse": "", "player_parse_type": "0", "parse_type": "0"},
+                    "urls": [{"name": "链接", "url": "http://x", "token": ""}],
+                },
+                {
+                    "player_info": {"show": "正式线路", "parse": "", "player_parse_type": "0", "parse_type": "0"},
+                    "urls": [{"name": "第1集", "url": "http://y", "token": ""}],
+                },
+            ],
+        }
+
+        self.spider._api_post = lambda ep, payload=None: detail_data
+        self.spider.host = "http://test.com"
+        self.spider.init_data = {}
+        result = self.spider.detailContent(["1"])
+        vod = result["list"][0]
+        self.assertIn("1线", vod["vod_play_from"])
+        self.assertIn("正式线路", vod["vod_play_from"])

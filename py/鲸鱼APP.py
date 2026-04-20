@@ -220,3 +220,77 @@ class Spider(BaseSpider):
                 "vod_remarks": item.get("vod_remarks", ""),
             })
         return {"list": items, "page": page, "limit": 90, "total": 999999}
+
+    JUNK_KEYWORDS = ["防走丢", "群", "防失群", "官网"]
+
+    def detailContent(self, ids):
+        self.init()
+        vod_id = ids[0]
+        data = None
+        for endpoint in ["vodDetail", "vodDetail2"]:
+            try:
+                data = self._api_post(endpoint, {"vod_id": vod_id})
+                if data:
+                    break
+            except Exception:
+                continue
+        if not data:
+            return {"list": []}
+
+        vod = data.get("vod", {})
+        lines = []
+        name_count = {}
+        line_id = 1
+
+        for line in data.get("vod_play_list", []):
+            info = line.get("player_info", {})
+            name = info.get("show", "")
+
+            if any(kw in name for kw in self.JUNK_KEYWORDS):
+                name = f"{line_id}线"
+                info["show"] = name
+
+            count = name_count.get(name, 0) + 1
+            name_count[name] = count
+            if count > 1:
+                name = f"{name}{count}"
+                info["show"] = name
+
+            urls = line.get("urls", [])
+            if not urls:
+                line_id += 1
+                continue
+
+            play_items = []
+            for ep in urls:
+                payload = ",".join([
+                    info.get("parse", ""),
+                    ep.get("url", ""),
+                    "token+" + ep.get("token", ""),
+                    str(info.get("player_parse_type", "")),
+                    str(info.get("parse_type", "")),
+                ])
+                play_items.append(f"{ep.get('name', '')}${name}@@direct@@{payload}")
+
+            if play_items:
+                lines.append({
+                    "display": name,
+                    "urls": "#".join(play_items),
+                })
+            line_id += 1
+
+        return {
+            "list": [{
+                "vod_id": vod_id,
+                "vod_name": vod.get("vod_name", ""),
+                "vod_pic": vod.get("vod_pic", ""),
+                "vod_remarks": vod.get("vod_remarks", ""),
+                "vod_content": vod.get("vod_content", ""),
+                "vod_actor": (vod.get("vod_actor") or "").replace("演员", ""),
+                "vod_director": (vod.get("vod_director") or "").replace("导演", ""),
+                "vod_year": (vod.get("vod_year") or "") + "年" if vod.get("vod_year") else "",
+                "vod_area": vod.get("vod_area", ""),
+                "vod_play_from": "$$$".join(l["display"] for l in lines),
+                "vod_play_url": "$$$".join(l["urls"] for l in lines),
+            }]
+        }
