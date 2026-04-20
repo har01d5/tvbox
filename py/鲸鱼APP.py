@@ -29,8 +29,28 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    SITE_URL = "https://jingyu4k-1312635929.cos.ap-nanjing.myqcloud.com/juyu3.json"
+
     def init(self, extend=""):
-        pass
+        if self.host:
+            return
+        headers = {"User-Agent": self.ua}
+        try:
+            rsp = self.fetch(self.SITE_URL, headers=headers, timeout=10, verify=False)
+            host = rsp.text.strip().rstrip("/")
+            if not host.startswith("http"):
+                host = "http://" + host
+            self.host = host
+        except Exception as e:
+            self.log(f"获取host失败: {e}")
+            raise
+        try:
+            data = self._api_post(self.init_endpoint)
+            if data and data.get("config", {}).get("system_search_verify_status"):
+                self.search_verify = True
+            self.init_data = data
+        except Exception as e:
+            self.log(f"初始化数据失败: {e}")
 
     def _aes_encrypt(self, plaintext):
         key = AES_KEY.encode("utf-8")

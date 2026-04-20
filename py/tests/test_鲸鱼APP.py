@@ -38,3 +38,18 @@ class TestJingyuSpider(unittest.TestCase):
         self.spider.host = "http://test.com"
         result = self.spider._api_post("someEndpoint")
         self.assertEqual(result, payload)
+
+    def test_init_fetches_host_from_site_url(self):
+        init_encrypted = self.spider._aes_encrypt(json.dumps({"type_list": []}))
+
+        class FakeInitResponse:
+            status_code = 200
+            encoding = "utf-8"
+            text = "http://example.com"
+            def json(self):
+                return {"data": init_encrypted}
+
+        self.spider.fetch = lambda url, **kwargs: FakeInitResponse()
+        self.spider.post = lambda url, **kwargs: FakeInitResponse()
+        self.spider.init()
+        self.assertEqual(self.spider.host, "http://example.com")
