@@ -134,3 +134,72 @@ class Spider(BaseSpider):
                 }
             )
         return self._page_result(items, pg)
+
+    def _parse_detail_page(self, html, vod_id):
+        root = self.html(html)
+        if root is None:
+            return {"list": []}
+        info_nodes = root.xpath(
+            "//*[contains(concat(' ', normalize-space(@class), ' '), ' no-margin ') and "
+            "contains(concat(' ', normalize-space(@class), ' '), ' m ') and "
+            "contains(concat(' ', normalize-space(@class), ' '), ' l ')]"
+        )
+        director = ""
+        area = ""
+        for node in info_nodes:
+            classes = " ".join(node.xpath("./@class"))
+            text = self._clean_text("".join(node.xpath(".//text()")))
+            if not text:
+                continue
+            if "no-space" in classes and not director:
+                director = text
+            elif "no-space" not in classes and not area:
+                area = text
+        play_from = []
+        play_urls = []
+        tabs = [
+            self._clean_text("".join(node.xpath(".//text()")))
+            for node in root.xpath("//*[contains(@class,'tabs') and contains(@class,'left-align')]//a")
+        ]
+        groups = root.xpath("//*[contains(@class,'playno')]")
+        for index, group in enumerate(groups):
+            episodes = []
+            for anchor in group.xpath(".//a[@href]"):
+                play_id = self._encode_play_id("".join(anchor.xpath("./@href")))
+                ep_name = self._clean_text("".join(anchor.xpath(".//text()")))
+                if play_id and ep_name:
+                    episodes.append(f"{ep_name}${play_id}")
+            if episodes:
+                play_from.append(tabs[index] if index < len(tabs) and tabs[index] else f"线路{index + 1}")
+                play_urls.append("#".join(episodes))
+        return {
+            "list": [
+                {
+                    "vod_id": vod_id,
+                    "vod_name": self._clean_text("".join(root.xpath("//h1[1]//text()"))),
+                    "vod_pic": self._build_url("".join(root.xpath("(//img/@src | //img/@data-src)[1]"))),
+                    "type_name": self._clean_text(
+                        "".join(root.xpath("(//*[contains(@class,'scroll') and contains(@class,'no-margin')]//a[1]//text())[1]"))
+                    ),
+                    "vod_actor": self._clean_text(
+                        "".join(root.xpath("(//*[contains(@class,'scroll') and contains(@class,'no-margin')]//a[2]//text())[1]"))
+                    ),
+                    "vod_director": director,
+                    "vod_area": area,
+                    "vod_content": self._clean_text("".join(root.xpath("(//*[contains(@class,'responsive')]//p[last()]//text())[1]"))),
+                    "vod_play_from": "$$$".join(play_from),
+                    "vod_play_url": "$$$".join(play_urls),
+                }
+            ]
+        }
+
+    def detailContent(self, ids):
+        result = {"list": []}
+        for raw_id in ids:
+            vod_id = str(raw_id or "").strip()
+            detail_url = self._decode_vod_id(vod_id) or self._build_url(vod_id)
+            if not detail_url:
+                continue
+            parsed = self._parse_detail_page(self._request_html(detail_url), vod_id)
+            result["list"].extend(parsed.get("list", []))
+        return result

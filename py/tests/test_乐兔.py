@@ -90,6 +90,51 @@ class TestLeTuSpider(unittest.TestCase):
         self.assertEqual(result["list"][0]["vod_id"], "detail/search-demo")
         self.assertNotIn("pagecount", result)
 
+    def test_parse_detail_page_extracts_metadata_and_playlists(self):
+        html = """
+        <h1>详情标题</h1>
+        <img src="/poster.jpg" />
+        <div class="scroll no-margin">
+          <a>电影</a>
+          <a>演员甲</a>
+        </div>
+        <div class="no-space no-margin m l">导演甲</div>
+        <div class="no-margin m l">中国</div>
+        <div class="responsive"><p>第一段</p><p>一段剧情简介</p></div>
+        <div class="tabs left-align">
+          <a>线路A</a>
+          <a>线路B</a>
+        </div>
+        <div class="playno">
+          <a href="/play/123-1-1.html">第1集</a>
+          <a href="/play/123-1-2.html">第2集</a>
+        </div>
+        <div class="playno">
+          <a href="/play/123-2-1.html">正片</a>
+        </div>
+        """
+        result = self.spider._parse_detail_page(html, "detail/demo")
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_id"], "detail/demo")
+        self.assertEqual(vod["vod_name"], "详情标题")
+        self.assertEqual(vod["vod_pic"], "https://www.letu.me/poster.jpg")
+        self.assertEqual(vod["type_name"], "电影")
+        self.assertEqual(vod["vod_actor"], "演员甲")
+        self.assertEqual(vod["vod_director"], "导演甲")
+        self.assertEqual(vod["vod_area"], "中国")
+        self.assertEqual(vod["vod_content"], "一段剧情简介")
+        self.assertEqual(vod["vod_play_from"], "线路A$$$线路B")
+        self.assertEqual(
+            vod["vod_play_url"],
+            "第1集$play/123-1-1#第2集$play/123-1-2$$$正片$play/123-2-1",
+        )
+
+    @patch.object(Spider, "_request_html")
+    def test_detail_content_decodes_compact_vod_id(self, mock_request_html):
+        mock_request_html.return_value = "<h1>详情标题</h1>"
+        self.spider.detailContent(["detail/demo"])
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.letu.me/detail/demo.html")
+
 
 if __name__ == "__main__":
     unittest.main()
