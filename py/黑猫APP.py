@@ -30,6 +30,11 @@ class Spider(BaseSpider):
             "displayName": "大陆",
             "mergeList": ["中国大陆", "大陆", "内地"],
         }
+        self.line_config = {
+            "高清线路1": {"displayName": "🐈‍⬛高清线路", "order": 301, "mode": "direct", "enabled": True},
+            "标清线路2": {"displayName": "🐈‍⬛标清线路1", "order": 302, "mode": "direct", "enabled": True},
+            "标清线路3": {"displayName": "🐈‍⬛标清线路2", "order": 303, "mode": "direct", "enabled": True},
+        }
 
     def init(self, extend=""):
         self.search_api = "searchList"
@@ -236,3 +241,81 @@ class Spider(BaseSpider):
                 }
             )
         return self._page_result(items, pg)
+
+    def _get_line_config(self, name):
+        return self.line_config.get(str(name or ""))
+
+    def _line_display(self, name):
+        config = self._get_line_config(name)
+        return config.get("displayName", name) if config else name
+
+    def _line_order(self, name):
+        config = self._get_line_config(name)
+        return config.get("order", 999) if config else 999
+
+    def _line_mode(self, name):
+        config = self._get_line_config(name)
+        return config.get("mode", "direct") if config else "direct"
+
+    def _line_blocked(self, name):
+        config = self._get_line_config(name)
+        return bool(config) and config.get("enabled") is False
+
+    def detailContent(self, ids):
+        items = []
+        for vod_id in ids:
+            payload = {"vod_id": str(vod_id)}
+            data = self._api_post("vodDetail", payload) or self._api_post("vodDetail2", payload)
+            if not data:
+                continue
+            lines = []
+            name_count = {}
+            fallback_index = 1
+            for line in data.get("vod_play_list", []):
+                player_info = line.get("player_info", {})
+                raw_name = str(player_info.get("show", ""))
+                if any(keyword in raw_name for keyword in ["防走丢", "群", "防失群", "官网"]):
+                    raw_name = f"{fallback_index}线"
+                    fallback_index += 1
+                name_count[raw_name] = name_count.get(raw_name, 0) + 1
+                line_name = raw_name if name_count[raw_name] == 1 else f"{raw_name}{name_count[raw_name]}"
+                if self._line_blocked(line_name):
+                    continue
+                urls = []
+                for vod in line.get("urls", []):
+                    payload_text = ",".join(
+                        [
+                            str(player_info.get("parse", "")),
+                            str(vod.get("url", "")),
+                            "token+" + str(vod.get("token", "")),
+                            str(player_info.get("player_parse_type", "")),
+                            str(player_info.get("parse_type", "")),
+                        ]
+                    )
+                    urls.append(f"{vod.get('name', '')}${line_name}@@{self._line_mode(line_name)}@@{payload_text}")
+                if urls:
+                    lines.append(
+                        {
+                            "display": self._line_display(line_name),
+                            "order": self._line_order(line_name),
+                            "urls": "#".join(urls),
+                        }
+                    )
+            lines.sort(key=lambda item: item["order"])
+            vod = data.get("vod", {})
+            items.append(
+                {
+                    "vod_id": str(vod_id),
+                    "vod_name": vod.get("vod_name", ""),
+                    "vod_pic": vod.get("vod_pic", ""),
+                    "vod_remarks": vod.get("vod_remarks", ""),
+                    "vod_content": vod.get("vod_content", ""),
+                    "vod_actor": str(vod.get("vod_actor", "")).replace("演员", ""),
+                    "vod_director": str(vod.get("vod_director", "")).replace("导演", ""),
+                    "vod_year": f"{vod.get('vod_year', '')}年" if vod.get("vod_year") else "",
+                    "vod_area": vod.get("vod_area", ""),
+                    "vod_play_from": "$$$".join(line["display"] for line in lines),
+                    "vod_play_url": "$$$".join(line["urls"] for line in lines),
+                }
+            )
+        return {"list": items}

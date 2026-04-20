@@ -131,6 +131,65 @@ class TestHeiMaoAppSpider(unittest.TestCase):
         )
         self.assertNotIn("pagecount", result)
 
+    @patch.object(Spider, "_api_post")
+    def test_detail_content_falls_back_to_second_endpoint_and_sorts_lines(self, mock_api_post):
+        mock_api_post.side_effect = [
+            None,
+            {
+                "vod": {
+                    "vod_name": "示例影片",
+                    "vod_pic": "poster.jpg",
+                    "vod_remarks": "更新至10集",
+                    "vod_content": "一段剧情",
+                    "vod_actor": "演员甲/演员乙",
+                    "vod_director": "导演甲",
+                    "vod_year": "2025",
+                    "vod_area": "中国大陆",
+                },
+                "vod_play_list": [
+                    {
+                        "player_info": {
+                            "show": "高清线路1",
+                            "parse": "https://parser-a/?url=",
+                            "player_parse_type": "1",
+                            "parse_type": "1",
+                        },
+                        "urls": [{"name": "正片", "url": "https%3A%2F%2Fplay-a", "token": "tk-a"}],
+                    },
+                    {
+                        "player_info": {
+                            "show": "防走丢加群",
+                            "parse": "https://parser-b/?url=",
+                            "player_parse_type": "1",
+                            "parse_type": "0",
+                        },
+                        "urls": [{"name": "备用", "url": "https%3A%2F%2Fplay-b", "token": "tk-b"}],
+                    },
+                    {
+                        "player_info": {
+                            "show": "高清线路1",
+                            "parse": "https://parser-c/?url=",
+                            "player_parse_type": "2",
+                            "parse_type": "2",
+                        },
+                        "urls": [{"name": "蓝光", "url": "https%3A%2F%2Fplay-c", "token": "tk-c"}],
+                    },
+                ],
+            },
+        ]
+        result = self.spider.detailContent(["123"])
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_id"], "123")
+        self.assertEqual(vod["vod_name"], "示例影片")
+        self.assertEqual(vod["vod_year"], "2025年")
+        self.assertEqual(vod["vod_play_from"], "🐈‍⬛高清线路$$$1线$$$高清线路12")
+        self.assertEqual(
+            vod["vod_play_url"],
+            "正片$高清线路1@@direct@@https://parser-a/?url=,https%3A%2F%2Fplay-a,token+tk-a,1,1"
+            "$$$备用$1线@@direct@@https://parser-b/?url=,https%3A%2F%2Fplay-b,token+tk-b,1,0"
+            "$$$蓝光$高清线路12@@direct@@https://parser-c/?url=,https%3A%2F%2Fplay-c,token+tk-c,2,2",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
