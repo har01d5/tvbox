@@ -33,6 +33,17 @@ class Spider(BaseSpider):
             "shandian",
             "ouge",
         ]
+        self.pan_priority = {
+            "baidu": 1,
+            "a139": 2,
+            "a189": 3,
+            "a123": 4,
+            "a115": 5,
+            "quark": 6,
+            "xunlei": 7,
+            "aliyun": 8,
+            "uc": 9,
+        }
         self.sites = [
             {
                 "id": "wanou",
@@ -41,6 +52,7 @@ class Spider(BaseSpider):
                 "filter_files": ["wogg.json"],
                 "list_xpath": "//*[contains(@class,'module-item')]",
                 "search_xpath": "//*[contains(@class,'module-search-item')]",
+                "detail_pan_xpath": "//*[contains(@class,'module-row-info')]//p",
                 "category_url": "/vodshow/{categoryId}--------{page}---.html",
                 "category_url_with_filters": "/vodshow/{categoryId}-{area}-{by}-{class}-----{page}---{year}.html",
                 "search_url": "/vodsearch/-------------.html?wd={keyword}&page={page}",
@@ -53,6 +65,7 @@ class Spider(BaseSpider):
                 "filter_files": ["mogg.json"],
                 "list_xpath": "//*[contains(@class,'module-item')]",
                 "search_xpath": "//*[contains(@class,'module-search-item')]",
+                "detail_pan_xpath": "//*[contains(@class,'module-row-info')]//p",
                 "category_url": "/vodshow/{categoryId}--------{page}---.html",
                 "search_url": "/vodsearch/-------------.html?wd={keyword}&page={page}",
                 "default_categories": [("1", "电影"), ("2", "电视剧"), ("3", "动漫"), ("29", "综艺")],
@@ -64,6 +77,7 @@ class Spider(BaseSpider):
                 "filter_files": ["labi.json"],
                 "list_xpath": "//*[contains(@class,'module-item')]",
                 "search_xpath": "//*[contains(@class,'module-search-item')]",
+                "detail_pan_xpath": "//*[contains(@class,'module-row-info')]//p",
                 "category_url": "/vodshow/{categoryId}--------{page}---.html",
                 "search_url": "/vodsearch/-------------.html?wd={keyword}&page={page}",
                 "default_categories": [("1", "电影"), ("2", "电视剧"), ("3", "动漫"), ("4", "综艺")],
@@ -330,3 +344,167 @@ class Spider(BaseSpider):
 
         merged = self._aggregate_search_results(all_items)
         return {"page": page, "total": len(merged), "list": merged}
+
+    def _detect_pan_type(self, url):
+        value = str(url or "").lower()
+        if "pan.baidu.com" in value:
+            return "baidu", "百度资源"
+        if "pan.quark.cn" in value:
+            return "quark", "夸克资源"
+        if "drive.uc.cn" in value:
+            return "uc", "UC资源"
+        if "alipan.com" in value or "aliyundrive.com" in value:
+            return "aliyun", "阿里资源"
+        if "pan.xunlei.com" in value:
+            return "xunlei", "迅雷资源"
+        if "123pan.com" in value:
+            return "a123", "123资源"
+        if "115.com" in value:
+            return "a115", "115资源"
+        if "189.cn" in value:
+            return "a189", "天翼资源"
+        if "139.com" in value:
+            return "a139", "移动云资源"
+        return "", ""
+
+    def _join_next_sibling_links(self, root, label):
+        values = []
+        labels = root.xpath(f"//*[contains(@class,'video-info-itemtitle') and contains(normalize-space(.), '{label}')]")
+        for node in labels:
+            sibling = node.getnext()
+            if sibling is None:
+                continue
+            for text in sibling.xpath(".//a/text()"):
+                clean = str(text).strip()
+                if clean:
+                    values.append(clean)
+        unique = []
+        for value in values:
+            if value not in unique:
+                unique.append(value)
+        return ",".join(unique)
+
+    def _join_next_sibling_text(self, root, label):
+        labels = root.xpath(f"//*[contains(@class,'video-info-itemtitle') and contains(normalize-space(.), '{label}')]")
+        for node in labels:
+            sibling = node.getnext()
+            if sibling is None:
+                continue
+            text = "".join(sibling.xpath(".//text()")).strip()
+            if text:
+                return text
+        return ""
+
+    def _parse_detail_page(self, site, detail_path, html):
+        root = self.html(html)
+        if root is None:
+            return {
+                "vod_name": "",
+                "vod_pic": "",
+                "vod_year": "",
+                "vod_director": "",
+                "vod_actor": "",
+                "vod_content": "",
+                "pan_urls": [],
+                "_site_name": site["name"],
+            }
+
+        title = "".join(root.xpath("//*[contains(@class,'page-title')][1]//text()")).strip()
+        pic = ((root.xpath("//*[contains(@class,'mobile-play')]//img[1]/@data-src") or [""])[0]).strip()
+        pan_urls = []
+        for node in root.xpath(site["detail_pan_xpath"]):
+            text = "".join(node.xpath(".//text()")).strip()
+            if text.startswith("http"):
+                pan_urls.append(text)
+
+        return {
+            "vod_name": title,
+            "vod_pic": self._build_absolute_url(site["domains"][0], pic),
+            "vod_year": "",
+            "vod_director": self._join_next_sibling_links(root, "导演"),
+            "vod_actor": self._join_next_sibling_links(root, "主演"),
+            "vod_content": self._join_next_sibling_text(root, "剧情"),
+            "pan_urls": pan_urls,
+            "_site_name": site["name"],
+        }
+
+    def _fetch_site_detail(self, site, detail_path):
+        html = self._request_with_failover(site, detail_path)
+        return self._parse_detail_page(site, detail_path, html)
+
+    def _build_pan_lines(self, detail):
+        lines = []
+        seen = set()
+        for url in detail.get("pan_urls", []):
+            pan_type, title = self._detect_pan_type(url)
+            if not pan_type or url in seen:
+                continue
+            seen.add(url)
+            lines.append(
+                (
+                    self.pan_priority.get(pan_type, 999),
+                    f"{pan_type}#{detail['_site_name']}",
+                    f"{title}${url}",
+                )
+            )
+        lines.sort(key=lambda item: item[0])
+        return lines
+
+    def detailContent(self, ids):
+        vod_id = ids[0]
+        if str(vod_id).startswith("agg:"):
+            payload = self._decode_aggregate_vod_id(vod_id)
+            details = []
+            for item in payload:
+                site = self._get_site(item["site"])
+                try:
+                    details.append(self._fetch_site_detail(site, item["path"]))
+                except Exception:
+                    continue
+
+            primary = details[0]
+            all_lines = []
+            seen_urls = set()
+            for detail in details:
+                for _, line_from, line_url in self._build_pan_lines(detail):
+                    share_url = line_url.split("$", 1)[1]
+                    if share_url in seen_urls:
+                        continue
+                    seen_urls.add(share_url)
+                    all_lines.append((line_from, line_url))
+
+            return {
+                "list": [
+                    {
+                        "vod_id": vod_id,
+                        "vod_name": primary["vod_name"],
+                        "vod_pic": primary["vod_pic"],
+                        "vod_year": primary["vod_year"],
+                        "vod_director": primary["vod_director"],
+                        "vod_actor": primary["vod_actor"],
+                        "vod_content": primary["vod_content"],
+                        "vod_play_from": "$$$".join([item[0] for item in all_lines]),
+                        "vod_play_url": "$$$".join([item[1] for item in all_lines]),
+                    }
+                ]
+            }
+
+        info = self._decode_site_vod_id(vod_id)
+        site = self._get_site(info["site"])
+        detail = self._fetch_site_detail(site, info["path"])
+        lines = self._build_pan_lines(detail)
+        return {
+            "list": [
+                {
+                    "vod_id": vod_id,
+                    "vod_name": detail["vod_name"],
+                    "vod_pic": detail["vod_pic"],
+                    "vod_year": detail["vod_year"],
+                    "vod_director": detail["vod_director"],
+                    "vod_actor": detail["vod_actor"],
+                    "vod_content": detail["vod_content"],
+                    "vod_play_from": "$$$".join([item[1] for item in lines]),
+                    "vod_play_url": "$$$".join([item[2] for item in lines]),
+                }
+            ]
+        }

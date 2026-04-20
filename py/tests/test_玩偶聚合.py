@@ -228,3 +228,66 @@ class TestWanouAggregateSpider(unittest.TestCase):
         self.assertEqual(len(result["list"]), 1)
         self.assertEqual(result["list"][0]["vod_name"], "繁花")
         self.assertNotIn("pagecount", result)
+
+    def test_parse_detail_page_extracts_meta_and_netdisk_links(self):
+        site = {
+            "id": "wanou",
+            "name": "玩偶",
+            "domains": ["https://www.wogg.net"],
+            "detail_pan_xpath": "//*[contains(@class,'module-row-info')]//p",
+        }
+        html = """
+        <div class="page-title">示例剧</div>
+        <div class="mobile-play"><img class="lazyload" data-src="/poster.jpg" /></div>
+        <div class="video-info-itemtitle">导演</div><div><a>导演甲</a></div>
+        <div class="video-info-itemtitle">主演</div><div><a>演员甲</a><a>演员乙</a></div>
+        <div class="video-info-itemtitle">剧情</div><div><p>一段剧情简介</p></div>
+        <div class="module-row-info">
+          <p>https://pan.quark.cn/s/q1</p>
+          <p>https://pan.baidu.com/s/b1</p>
+        </div>
+        """
+        detail = self.spider._parse_detail_page(site, "/voddetail/123.html", html)
+        self.assertEqual(detail["vod_name"], "示例剧")
+        self.assertEqual(detail["vod_pic"], "https://www.wogg.net/poster.jpg")
+        self.assertEqual(detail["vod_director"], "导演甲")
+        self.assertEqual(detail["vod_actor"], "演员甲,演员乙")
+        self.assertEqual(detail["pan_urls"], ["https://pan.quark.cn/s/q1", "https://pan.baidu.com/s/b1"])
+
+    @patch.object(Spider, "_fetch_site_detail")
+    def test_detail_content_for_aggregate_id_merges_lines_from_multiple_sites(self, mock_fetch_site_detail):
+        mock_fetch_site_detail.side_effect = [
+            {
+                "vod_name": "繁花",
+                "vod_pic": "https://img.example/w.jpg",
+                "vod_year": "2024",
+                "vod_director": "导演甲",
+                "vod_actor": "演员甲",
+                "vod_content": "玩偶简介",
+                "pan_urls": ["https://pan.baidu.com/s/b1", "https://pan.quark.cn/s/q1"],
+                "_site_name": "玩偶",
+            },
+            {
+                "vod_name": "繁花",
+                "vod_pic": "https://img.example/m.jpg",
+                "vod_year": "2024",
+                "vod_director": "导演乙",
+                "vod_actor": "演员乙",
+                "vod_content": "木偶简介",
+                "pan_urls": ["https://pan.quark.cn/s/q2", "https://pan.baidu.com/s/b1"],
+                "_site_name": "木偶",
+            },
+        ]
+        payload = [
+            {"site": "wanou", "path": "/voddetail/1.html", "name": "繁花", "year": "2024"},
+            {"site": "muou", "path": "/voddetail/2.html", "name": "繁花", "year": "2024"},
+        ]
+        result = self.spider.detailContent([self.spider._encode_aggregate_vod_id(payload)])
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_name"], "繁花")
+        self.assertEqual(vod["vod_pic"], "https://img.example/w.jpg")
+        self.assertEqual(vod["vod_play_from"], "baidu#玩偶$$$quark#玩偶$$$quark#木偶")
+        self.assertEqual(
+            vod["vod_play_url"],
+            "百度资源$https://pan.baidu.com/s/b1$$$夸克资源$https://pan.quark.cn/s/q1$$$夸克资源$https://pan.quark.cn/s/q2",
+        )
