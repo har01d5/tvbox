@@ -45,6 +45,22 @@ class TestWanouAggregateSpider(unittest.TestCase):
             ],
         )
 
+    def test_home_content_exposes_ouge_site_and_categories(self):
+        content = self.spider.homeContent(False)
+        type_ids = [item["type_id"] for item in content["class"]]
+        self.assertIn("site_ouge", type_ids)
+        self.assertEqual(
+            content["filters"]["site_ouge"][0]["value"][1:],
+            [
+                {"n": "电影", "v": "1"},
+                {"n": "剧集", "v": "2"},
+                {"n": "动漫", "v": "3"},
+                {"n": "综艺", "v": "4"},
+                {"n": "短剧", "v": "5"},
+                {"n": "综合", "v": "21"},
+            ],
+        )
+
     @patch.object(
         Spider,
         "_load_local_filter_groups",
@@ -372,6 +388,34 @@ class TestWanouAggregateSpider(unittest.TestCase):
             },
         )
 
+    @patch.object(Spider, "_request_with_failover")
+    def test_fetch_site_search_builds_ouge_search_url_and_parses_results(self, mock_request_with_failover):
+        mock_request_with_failover.return_value = """
+        <div class="module-search-item">
+          <a class="video-serial" href="/index.php/vod/detail/id/789.html" title="欧歌影片">抢先版</a>
+          <div class="module-item-pic"><img data-src="/search.jpg" alt="欧歌影片" /></div>
+          <div class="module-item-text">抢先版</div>
+        </div>
+        """
+        site = self.spider._get_site("ouge")
+        results = self.spider._fetch_site_search(site, "繁花", 1)
+        self.assertEqual(
+            mock_request_with_failover.call_args.args[1],
+            "/index.php/vod/search/page/1/wd/%E7%B9%81%E8%8A%B1.html",
+        )
+        self.assertEqual(
+            results[0],
+            {
+                "vod_id": "site:ouge:/index.php/vod/detail/id/789.html",
+                "vod_name": "欧歌影片",
+                "vod_pic": "https://woog.nxog.eu.org/search.jpg",
+                "vod_remarks": "抢先版",
+                "vod_year": "",
+                "_site": "ouge",
+                "_detail_path": "/index.php/vod/detail/id/789.html",
+            },
+        )
+
     @patch.object(Spider, "_fetch_site_search")
     def test_search_content_skips_site_errors(self, mock_fetch_site_search):
         mock_fetch_site_search.side_effect = [
@@ -387,6 +431,7 @@ class TestWanouAggregateSpider(unittest.TestCase):
                     "_detail_path": "/voddetail/2.html",
                 }
             ],
+            [],
             [],
         ]
         result = self.spider.searchContent("繁花", False, "1")
@@ -437,6 +482,43 @@ class TestWanouAggregateSpider(unittest.TestCase):
             "百度资源$https://pan.baidu.com/s/b1$$$夸克资源$https://pan.quark.cn/s/z1",
         )
 
+    @patch.object(Spider, "_fetch_site_detail")
+    def test_detail_content_for_aggregate_id_merges_ouge_pan_lines(self, mock_fetch_site_detail):
+        mock_fetch_site_detail.side_effect = [
+            {
+                "vod_name": "繁花",
+                "vod_pic": "https://img.example/w.jpg",
+                "vod_year": "2024",
+                "vod_director": "导演甲",
+                "vod_actor": "演员甲",
+                "vod_content": "玩偶简介",
+                "pan_urls": ["https://pan.baidu.com/s/b1"],
+                "_site_name": "玩偶",
+            },
+            {
+                "vod_name": "繁花",
+                "vod_pic": "https://woog.nxog.eu.org/poster.jpg",
+                "vod_year": "2024",
+                "vod_director": "导演乙",
+                "vod_actor": "演员乙",
+                "vod_content": "欧歌简介",
+                "pan_urls": ["https://pan.quark.cn/s/o1", "https://pan.baidu.com/s/b1"],
+                "_site_name": "欧歌",
+            },
+        ]
+        payload = [
+            {"site": "wanou", "path": "/voddetail/1.html", "name": "繁花", "year": "2024"},
+            {"site": "ouge", "path": "/index.php/vod/detail/id/2.html", "name": "繁花", "year": "2024"},
+        ]
+        result = self.spider.detailContent([self.spider._encode_aggregate_vod_id(payload)])
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_name"], "繁花")
+        self.assertEqual(vod["vod_play_from"], "baidu#玩偶$$$quark#欧歌")
+        self.assertEqual(
+            vod["vod_play_url"],
+            "百度资源$https://pan.baidu.com/s/b1$$$夸克资源$https://pan.quark.cn/s/o1",
+        )
+
     @patch.object(Spider, "_request_with_failover")
     def test_category_content_builds_zhizhen_category_url(self, mock_request_with_failover):
         mock_request_with_failover.return_value = """
@@ -454,3 +536,21 @@ class TestWanouAggregateSpider(unittest.TestCase):
             "http://www.miqk.cc/index.php/vod/show/id/24/page/2.html",
         )
         self.assertEqual(result["list"][0]["vod_id"], "site:zhizhen:/index.php/vod/detail/id/456.html")
+
+    @patch.object(Spider, "_request_with_failover")
+    def test_category_content_builds_ouge_category_url(self, mock_request_with_failover):
+        mock_request_with_failover.return_value = """
+        <div class="module-item">
+          <div class="module-item-pic">
+            <a href="/index.php/vod/detail/id/456.html"></a>
+            <img data-src="/cate.jpg" alt="欧歌分类片" />
+          </div>
+          <div class="module-item-text">HD</div>
+        </div>
+        """
+        result = self.spider.categoryContent("site_ouge", "2", False, {"categoryId": "21"})
+        self.assertEqual(
+            mock_request_with_failover.call_args.args[1],
+            "https://woog.nxog.eu.org/index.php/vod/show/id/21/page/2.html",
+        )
+        self.assertEqual(result["list"][0]["vod_id"], "site:ouge:/index.php/vod/detail/id/456.html")
