@@ -28,16 +28,16 @@ class TestLeTuSpider(unittest.TestCase):
         self.assertEqual(self.spider.homeVideoContent(), {"list": []})
 
     def test_encode_and_decode_detail_and_play_ids(self):
-        self.assertEqual(self.spider._encode_vod_id("/detail/demo.html"), "detail/demo")
-        self.assertEqual(self.spider._decode_vod_id("detail/demo"), "https://www.letu.me/detail/demo.html")
-        self.assertEqual(self.spider._encode_play_id("/play/123-1-1.html"), "play/123-1-1")
-        self.assertEqual(self.spider._decode_play_id("play/123-1-1"), "https://www.letu.me/play/123-1-1.html")
+        self.assertEqual(self.spider._encode_vod_id("/vods/305741.html"), "vods/305741")
+        self.assertEqual(self.spider._decode_vod_id("vods/305741"), "https://www.letu.me/vods/305741.html")
+        self.assertEqual(self.spider._encode_play_id("/vod/305741-1-1.html"), "vod/305741-1-1")
+        self.assertEqual(self.spider._decode_play_id("vod/305741-1-1"), "https://www.letu.me/vod/305741-1-1.html")
 
     def test_parse_cards_extracts_compact_vod_ids(self):
         html = """
         <div class="grid container_list">
           <div class="s6">
-            <a href="/detail/demo.html" title="示例影片"></a>
+            <a href="/vods/305741.html" title="示例影片"></a>
             <img class="large" data-src="/cover.jpg" />
             <div class="small-text">更新至1集</div>
           </div>
@@ -47,7 +47,7 @@ class TestLeTuSpider(unittest.TestCase):
             self.spider._parse_cards(html),
             [
                 {
-                    "vod_id": "detail/demo",
+                    "vod_id": "vods/305741",
                     "vod_name": "示例影片",
                     "vod_pic": "https://www.letu.me/cover.jpg",
                     "vod_remarks": "更新至1集",
@@ -60,25 +60,31 @@ class TestLeTuSpider(unittest.TestCase):
         mock_request_html.return_value = """
         <div class="grid container_list">
           <div class="s6">
-            <a href="/detail/cat-demo.html" title="分类片"></a>
+            <a href="/vods/90001.html" title="分类片"></a>
             <img class="large" data-src="/cat.jpg" />
             <div class="small-text">HD</div>
           </div>
         </div>
         """
-        result = self.spider.categoryContent("2", "3", False, {})
-        self.assertEqual(mock_request_html.call_args.args[0], "https://www.letu.me/type/2-3.html")
-        self.assertEqual(result["page"], 3)
+        result = self.spider.categoryContent("2", "5", False, {})
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.letu.me/type/2-5.html")
+        self.assertEqual(result["page"], 5)
         self.assertEqual(result["limit"], 1)
         self.assertNotIn("pagecount", result)
-        self.assertEqual(result["list"][0]["vod_id"], "detail/cat-demo")
+        self.assertEqual(result["list"][0]["vod_id"], "vods/90001")
+
+    @patch.object(Spider, "_request_html")
+    def test_category_content_uses_plain_type_path_for_first_page(self, mock_request_html):
+        mock_request_html.return_value = ""
+        self.spider.categoryContent("1", "1", False, {})
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.letu.me/type/1.html")
 
     @patch.object(Spider, "_request_html")
     def test_search_content_uses_search_url_and_parses_cards(self, mock_request_html):
         mock_request_html.return_value = """
         <div class="result-list">
           <div class="result-item">
-            <a href="/detail/search-demo.html">搜索影片</a>
+            <a href="/vods/70001.html">搜索影片</a>
             <img class="large" data-src="/search.jpg" />
             <div class="small-text">全集</div>
           </div>
@@ -89,7 +95,7 @@ class TestLeTuSpider(unittest.TestCase):
             mock_request_html.call_args.args[0],
             "https://www.letu.me/vodsearch/-------------.html?wd=%E7%B9%81%E8%8A%B1",
         )
-        self.assertEqual(result["list"][0]["vod_id"], "detail/search-demo")
+        self.assertEqual(result["list"][0]["vod_id"], "vods/70001")
         self.assertNotIn("pagecount", result)
 
     def test_parse_detail_page_extracts_metadata_and_playlists(self):
@@ -108,16 +114,16 @@ class TestLeTuSpider(unittest.TestCase):
           <a>线路B</a>
         </div>
         <div class="playno">
-          <a href="/play/123-1-1.html">第1集</a>
-          <a href="/play/123-1-2.html">第2集</a>
+          <a href="/vod/305741-1-1.html">第1集</a>
+          <a href="/vod/305741-1-2.html">第2集</a>
         </div>
         <div class="playno">
-          <a href="/play/123-2-1.html">正片</a>
+          <a href="/vod/305741-2-1.html">正片</a>
         </div>
         """
-        result = self.spider._parse_detail_page(html, "detail/demo")
+        result = self.spider._parse_detail_page(html, "vods/305741")
         vod = result["list"][0]
-        self.assertEqual(vod["vod_id"], "detail/demo")
+        self.assertEqual(vod["vod_id"], "vods/305741")
         self.assertEqual(vod["vod_name"], "详情标题")
         self.assertEqual(vod["vod_pic"], "https://www.letu.me/poster.jpg")
         self.assertEqual(vod["type_name"], "电影")
@@ -128,19 +134,19 @@ class TestLeTuSpider(unittest.TestCase):
         self.assertEqual(vod["vod_play_from"], "线路A$$$线路B")
         self.assertEqual(
             vod["vod_play_url"],
-            "第1集$play/123-1-1#第2集$play/123-1-2$$$正片$play/123-2-1",
+            "第1集$vod/305741-1-1#第2集$vod/305741-1-2$$$正片$vod/305741-2-1",
         )
 
     @patch.object(Spider, "_request_html")
     def test_detail_content_decodes_compact_vod_id(self, mock_request_html):
         mock_request_html.return_value = "<h1>详情标题</h1>"
-        self.spider.detailContent(["detail/demo"])
-        self.assertEqual(mock_request_html.call_args.args[0], "https://www.letu.me/detail/demo.html")
+        self.spider.detailContent(["vods/305741"])
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.letu.me/vods/305741.html")
 
     @patch.object(Spider, "_request_html")
     def test_player_content_returns_direct_json_url(self, mock_request_html):
         mock_request_html.return_value = '{"code":200,"url":"https://video.example/direct.m3u8"}'
-        result = self.spider.playerContent("线路A", "play/123-1-1", {})
+        result = self.spider.playerContent("线路A", "vod/305741-1-1", {})
         self.assertEqual(result["parse"], 0)
         self.assertEqual(result["jx"], 0)
         self.assertEqual(result["url"], "https://video.example/direct.m3u8")
@@ -149,7 +155,7 @@ class TestLeTuSpider(unittest.TestCase):
     def test_player_content_decodes_rose_base64_url(self, mock_request_html):
         encoded = quote(base64.b64encode(b"https://video.example/rose.m3u8").decode("utf-8"))
         mock_request_html.return_value = '{"code":200,"url":"rose_' + encoded + '"}'
-        result = self.spider.playerContent("线路A", "play/123-1-1", {})
+        result = self.spider.playerContent("线路A", "vod/305741-1-1", {})
         self.assertEqual(result["parse"], 0)
         self.assertEqual(result["url"], "https://video.example/rose.m3u8")
 
@@ -164,18 +170,18 @@ class TestLeTuSpider(unittest.TestCase):
             '<script>var player_aaaa={"url":"https%3A%2F%2Fvideo.example%2Fenc1.m3u8","encrypt":"1"};</script>',
             '<script>var player_aaaa={"url":"' + encoded + '","encrypt":"2"};</script>',
         ]
-        encrypt_1 = self.spider.playerContent("线路A", "play/123-1-1", {})
-        encrypt_2 = self.spider.playerContent("线路A", "play/123-1-2", {})
+        encrypt_1 = self.spider.playerContent("线路A", "vod/305741-1-1", {})
+        encrypt_2 = self.spider.playerContent("线路A", "vod/305741-1-2", {})
         self.assertEqual(encrypt_1["url"], "https://video.example/enc1.m3u8")
         self.assertEqual(encrypt_2["url"], "https://video.example/enc2.m3u8")
 
     @patch.object(Spider, "_request_html")
     def test_player_content_falls_back_to_system_parse(self, mock_request_html):
         mock_request_html.return_value = "<html></html>"
-        result = self.spider.playerContent("线路A", "play/123-1-1", {})
+        result = self.spider.playerContent("线路A", "vod/305741-1-1", {})
         self.assertEqual(result["parse"], 1)
         self.assertEqual(result["jx"], 1)
-        self.assertEqual(result["url"], "https://www.letu.me/play/123-1-1.html")
+        self.assertEqual(result["url"], "https://www.letu.me/vod/305741-1-1.html")
 
 
 if __name__ == "__main__":

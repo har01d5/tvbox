@@ -46,20 +46,20 @@ class Spider(BaseSpider):
         return urljoin(self.host + "/", str(path or "").strip())
 
     def _encode_vod_id(self, href):
-        matched = re.search(r"/detail/([^/?#]+)\.html", self._build_url(href))
-        return f"detail/{matched.group(1)}" if matched else ""
+        matched = re.search(r"/(vods|vod|detail)/([^/?#]+)\.html", self._build_url(href))
+        return f"{matched.group(1)}/{matched.group(2)}" if matched else ""
 
     def _decode_vod_id(self, vod_id):
-        matched = re.search(r"^detail/([^/?#]+)$", str(vod_id or "").strip())
-        return self._build_url(f"/detail/{matched.group(1)}.html") if matched else ""
+        matched = re.search(r"^(vods|vod|detail)/([^/?#]+)$", str(vod_id or "").strip())
+        return self._build_url(f"/{matched.group(1)}/{matched.group(2)}.html") if matched else ""
 
     def _encode_play_id(self, href):
-        matched = re.search(r"/play/([^/?#]+)\.html", self._build_url(href))
-        return f"play/{matched.group(1)}" if matched else ""
+        matched = re.search(r"/(vod|vodplay|play)/([^/?#]+)\.html", self._build_url(href))
+        return f"{matched.group(1)}/{matched.group(2)}" if matched else ""
 
     def _decode_play_id(self, play_id):
-        matched = re.search(r"^play/([^/?#]+)$", str(play_id or "").strip())
-        return self._build_url(f"/play/{matched.group(1)}.html") if matched else ""
+        matched = re.search(r"^(vod|vodplay|play)/([^/?#]+)$", str(play_id or "").strip())
+        return self._build_url(f"/{matched.group(1)}/{matched.group(2)}.html") if matched else ""
 
     def _clean_text(self, text):
         return re.sub(r"\s+", " ", str(text or "")).strip()
@@ -104,8 +104,14 @@ class Spider(BaseSpider):
         page = int(pg)
         return {"page": page, "limit": len(items), "total": len(items), "list": items}
 
+    def _build_category_url(self, tid, pg):
+        page = int(pg)
+        if page <= 1:
+            return self._build_url(f"/type/{tid}.html")
+        return self._build_url(f"/type/{tid}-{page}.html")
+
     def categoryContent(self, tid, pg, filter, extend):
-        html = self._request_html(self._build_url(f"/type/{tid}-{int(pg)}.html"))
+        html = self._request_html(self._build_category_url(tid, pg))
         return self._page_result(self._parse_cards(html), pg)
 
     def searchContent(self, key, quick, pg="1"):
