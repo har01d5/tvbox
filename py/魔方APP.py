@@ -113,7 +113,10 @@ class Spider(BaseSpider):
             timeout=10,
             verify=False,
         )
-        body = json.loads(response.text or "{}")
+        try:
+            body = json.loads(response.text or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return None
         if not body.get("data"):
             return None
         return json.loads(self._aes_decrypt(body["data"]))

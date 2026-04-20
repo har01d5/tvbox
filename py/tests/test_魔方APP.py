@@ -34,6 +34,11 @@ class TestMoFangAppSpider(unittest.TestCase):
     def test_replace_code_normalizes_common_ocr_misreads(self):
         self.assertEqual(self.spider._replace_code("5y6口"), "5960")
 
+    @patch.object(Spider, "post")
+    def test_api_post_returns_none_when_upstream_payload_is_not_json(self, mock_post):
+        mock_post.return_value = SimpleNamespace(text="<html>blocked</html>")
+        self.assertIsNone(self.spider._api_post("initV119"))
+
     @patch.object(Spider, "_api_post")
     def test_home_content_filters_categories_merges_area_and_inserts_current_year(self, mock_api_post):
         mock_api_post.return_value = {
