@@ -93,15 +93,17 @@ class Spider(BaseSpider):
 
         items = []
         seen = set()
-        for node in root.xpath("//*[@id='main']//*[contains(@class,'module-item')]"):
-            href = "".join(node.xpath(".//*[contains(@class,'module-item-pic')]//a[1]/@href")).strip()
-            title = "".join(node.xpath(".//*[contains(@class,'module-item-pic')]//img[1]/@alt")).strip()
+        for node in root.xpath(
+            "//*[@id='main']//*[contains(concat(' ', normalize-space(@class), ' '), ' module-item ')]"
+        ):
+            href = ((node.xpath("(.//*[contains(@class,'module-item-pic')]//a[@href])[1]/@href") or [""])[0]).strip()
+            title = ((node.xpath("(.//*[contains(@class,'module-item-pic')]//img[@alt])[1]/@alt") or [""])[0]).strip()
             pic = (
-                "".join(node.xpath(".//*[contains(@class,'module-item-pic')]//img[1]/@data-src")).strip()
-                or "".join(node.xpath(".//*[contains(@class,'module-item-pic')]//img[1]/@src")).strip()
+                ((node.xpath("(.//*[contains(@class,'module-item-pic')]//img[@data-src])[1]/@data-src") or [""])[0]).strip()
+                or ((node.xpath("(.//*[contains(@class,'module-item-pic')]//img[@src])[1]/@src") or [""])[0]).strip()
             )
-            remarks = self._clean_text("".join(node.xpath(".//*[contains(@class,'module-item-text')][1]//text()")))
-            year = self._clean_text("".join(node.xpath(".//*[contains(@class,'module-item-caption')][1]//span[1]//text()")))
+            remarks = self._clean_text("".join(node.xpath("(.//*[contains(@class,'module-item-text')])[1]//text()")))
+            year = self._clean_text("".join(node.xpath("(.//*[contains(@class,'module-item-caption')])[1]//span[1]//text()")))
             if not href or not title or href in seen:
                 continue
             seen.add(href)
@@ -136,8 +138,8 @@ class Spider(BaseSpider):
             href = "".join(node.xpath(".//*[contains(@class,'video-serial')][1]/@href")).strip()
             title = "".join(node.xpath(".//*[contains(@class,'video-serial')][1]/@title")).strip()
             pic = (
-                "".join(node.xpath(".//*[contains(@class,'module-item-pic')]//img[1]/@data-src")).strip()
-                or "".join(node.xpath(".//*[contains(@class,'module-item-pic')]//img[1]/@src")).strip()
+                ((node.xpath("(.//*[contains(@class,'module-item-pic')]//img[@data-src])[1]/@data-src") or [""])[0]).strip()
+                or ((node.xpath("(.//*[contains(@class,'module-item-pic')]//img[@src])[1]/@src") or [""])[0]).strip()
             )
             remarks = self._clean_text(
                 "".join(node.xpath(".//*[contains(@class,'video-serial')][1]//text()"))

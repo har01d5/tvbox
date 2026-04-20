@@ -74,6 +74,45 @@ class TestWanOuGeGeSpider(unittest.TestCase):
             ],
         )
 
+    def test_parse_cards_ignores_module_items_container_and_uses_first_card_cover(self):
+        html = """
+        <div id="main">
+          <div class="module-items">
+            <div class="module-item">
+              <div class="module-item-pic">
+                <a href="/voddetail/123.html"></a>
+                <img data-src="/poster-a.jpg" alt="示例影片A" />
+              </div>
+              <div class="module-item-text">HD</div>
+            </div>
+            <div class="module-item">
+              <div class="module-item-pic">
+                <a href="/voddetail/456.html"></a>
+                <img data-src="/poster-b.jpg" alt="示例影片B" />
+              </div>
+              <div class="module-item-text">更新至10集</div>
+            </div>
+          </div>
+        </div>
+        """
+        self.assertEqual(
+            self.spider._parse_cards(html),
+            [
+                {
+                    "vod_id": "/voddetail/123.html",
+                    "vod_name": "示例影片A",
+                    "vod_pic": "http://wogg.xxooo.cf/poster-a.jpg",
+                    "vod_remarks": "HD",
+                },
+                {
+                    "vod_id": "/voddetail/456.html",
+                    "vod_name": "示例影片B",
+                    "vod_pic": "http://wogg.xxooo.cf/poster-b.jpg",
+                    "vod_remarks": "更新至10集",
+                },
+            ],
+        )
+
     @patch.object(Spider, "_request_html")
     def test_category_content_builds_reference_url_and_returns_page_payload(self, mock_request_html):
         mock_request_html.return_value = """

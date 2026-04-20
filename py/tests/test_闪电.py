@@ -66,6 +66,49 @@ class TestShanDianSpider(unittest.TestCase):
             ],
         )
 
+    def test_parse_cards_ignores_module_items_container_and_uses_first_card_cover(self):
+        html = """
+        <div id="main">
+          <div class="module-items">
+            <div class="module-item">
+              <div class="module-item-pic">
+                <a href="/index.php/vod/detail/id/123.html"></a>
+                <img data-src="/poster-a.jpg" alt="示例影片A" />
+              </div>
+              <div class="module-item-text">HD</div>
+              <div class="module-item-caption"><span>2025</span></div>
+            </div>
+            <div class="module-item">
+              <div class="module-item-pic">
+                <a href="/index.php/vod/detail/id/456.html"></a>
+                <img data-src="/poster-b.jpg" alt="示例影片B" />
+              </div>
+              <div class="module-item-text">更新至10集</div>
+              <div class="module-item-caption"><span>2024</span></div>
+            </div>
+          </div>
+        </div>
+        """
+        self.assertEqual(
+            self.spider._parse_cards(html),
+            [
+                {
+                    "vod_id": "/index.php/vod/detail/id/123.html",
+                    "vod_name": "示例影片A",
+                    "vod_pic": "https://sd.sduc.site/poster-a.jpg",
+                    "vod_remarks": "HD",
+                    "vod_year": "2025",
+                },
+                {
+                    "vod_id": "/index.php/vod/detail/id/456.html",
+                    "vod_name": "示例影片B",
+                    "vod_pic": "https://sd.sduc.site/poster-b.jpg",
+                    "vod_remarks": "更新至10集",
+                    "vod_year": "2024",
+                },
+            ],
+        )
+
     @patch.object(Spider, "_request_html")
     def test_category_content_builds_reference_url_and_returns_page_payload(self, mock_request_html):
         mock_request_html.return_value = """
