@@ -179,3 +179,97 @@ class Spider(BaseSpider):
             return {"page": page, "total": 0, "list": []}
         items = self._parse_search_cards(self._request_html(self._build_search_url(keyword, pg)))
         return {"page": page, "total": len(items), "list": items}
+
+    def _blank_detail(self, vod_id):
+        return {
+            "vod_id": vod_id,
+            "vod_name": "",
+            "vod_pic": "",
+            "vod_year": "",
+            "vod_director": "",
+            "vod_actor": "",
+            "vod_content": "",
+            "vod_play_from": "",
+            "vod_play_url": "",
+        }
+
+    def _extract_share_url(self, text):
+        matched = re.search(r"https?://[^\s'\"<>]+", self._stringify(text), re.I)
+        return matched.group(0).strip() if matched else ""
+
+    def _join_people(self, node):
+        values = [self._clean_text(text) for text in node.xpath(".//a//text()")]
+        if not any(values):
+            values = [self._clean_text(text) for text in node.xpath(".//text()")]
+        values = [value for value in values if value]
+        return ",".join(values)
+
+    def _extract_pan_groups(self, root):
+        groups = []
+        seen = set()
+        for node in root.xpath("//*[contains(@class,'module-row-info')]//p"):
+            text = self._clean_text("".join(node.xpath(".//text()")))
+            share_url = self._extract_share_url(text)
+            pan_type, title = self._detect_pan_type(share_url)
+            if not share_url or not pan_type or share_url in seen:
+                continue
+            seen.add(share_url)
+            groups.append((pan_type, f"{title}${share_url}"))
+        groups.sort(key=lambda item: self.pan_priority.get(item[0], 999))
+        return groups
+
+    def _parse_detail_page(self, html, vod_id):
+        if not self._stringify(html).strip():
+            return self._blank_detail(vod_id)
+        root = self.html(html)
+        if root is None:
+            return self._blank_detail(vod_id)
+
+        vod = self._blank_detail(vod_id)
+        vod["vod_name"] = self._clean_text("".join(root.xpath("(//*[contains(@class,'page-title')])[1]//text()")))
+        pic = (
+            ((root.xpath("//*[contains(@class,'mobile-play')]//*[contains(@class,'lazyload')][1]/@data-src") or [""])[0]).strip()
+            or ((root.xpath("//*[contains(@class,'mobile-play')]//*[contains(@class,'lazyload')][1]/@src") or [""])[0]).strip()
+        )
+        vod["vod_pic"] = self._fix_img_url(pic)
+        vod["vod_year"] = self._clean_text(
+            ((root.xpath("(//*[contains(@class,'module-item-caption')]//span[1]/text())") or [""])[0])
+        )
+
+        for label_node in root.xpath("//*[contains(@class,'video-info-itemtitle')]"):
+            label = self._clean_text("".join(label_node.xpath(".//text()")))
+            siblings = label_node.xpath("./following-sibling::*[1]")
+            if not siblings:
+                continue
+            block = siblings[0]
+            if "导演" in label:
+                vod["vod_director"] = self._join_people(block)
+            elif "主演" in label:
+                vod["vod_actor"] = self._join_people(block)
+            elif "剧情" in label:
+                texts = block.xpath(".//p//text()") or block.xpath(".//text()")
+                vod["vod_content"] = self._clean_text("".join(texts))
+
+        pan_groups = self._extract_pan_groups(root)
+        vod["vod_play_from"] = "$$$".join(item[0] for item in pan_groups)
+        vod["vod_play_url"] = "$$$".join(item[1] for item in pan_groups)
+        return vod
+
+    def detailContent(self, ids):
+        result = {"list": []}
+        for raw_id in ids:
+            vod_id = self._stringify(raw_id).strip()
+            if not vod_id:
+                continue
+            html = self._request_html(self._build_url(vod_id))
+            result["list"].append(self._parse_detail_page(html, vod_id))
+        return result
+
+    def _is_supported_pan_link(self, url):
+        return bool(self._detect_pan_type(url)[0])
+
+    def playerContent(self, flag, id, vipFlags):
+        target = self._stringify(id).strip()
+        if target and self._is_supported_pan_link(target):
+            return {"parse": 0, "jx": 0, "playUrl": "", "url": target, "header": {}}
+        return {"parse": 0, "jx": 0, "playUrl": "", "url": "", "header": {}}
