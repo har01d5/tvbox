@@ -193,3 +193,9 @@ class Spider(BaseSpider):
             detail = self._parse_detail(vod_id, self._request_html(self._build_url(vod_id)))
             result["list"].append(detail)
         return result
+
+    def playerContent(self, flag, id, vipFlags):
+        url = str(id or "").strip()
+        if self._is_supported_pan_url(url):
+            return {"parse": 0, "playUrl": "", "url": url}
+        return {"parse": 0, "playUrl": "", "url": ""}

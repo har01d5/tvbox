@@ -166,3 +166,28 @@ class TestRenRenDianYingSpider(unittest.TestCase):
             vod["vod_play_url"],
             "百度网盘$https://pan.baidu.com/s/b1#夸克资源$https://pan.quark.cn/s/q1",
         )
+
+    def test_player_content_passthroughs_supported_pan_urls(self):
+        self.assertEqual(
+            self.spider.playerContent("网盘", "https://pan.baidu.com/s/demo", {}),
+            {"parse": 0, "playUrl": "", "url": "https://pan.baidu.com/s/demo"},
+        )
+
+    def test_player_content_rejects_non_pan_url(self):
+        self.assertEqual(
+            self.spider.playerContent("站内", "/movie/123.html", {}),
+            {"parse": 0, "playUrl": "", "url": ""},
+        )
+
+    @patch.object(Spider, "_request_html")
+    def test_detail_content_leaves_play_fields_empty_when_no_pan_url_exists(self, mock_request_html):
+        mock_request_html.return_value = """
+        <div class="movie-des"><h1>无网盘影片</h1></div>
+        <div class="movie-img"><img src="/poster.jpg" /></div>
+        <div class="movie-txt"><p>仅有简介，没有网盘。</p></div>
+        """
+        result = self.spider.detailContent(["/movie/empty.html"])
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_name"], "无网盘影片")
+        self.assertEqual(vod["vod_play_from"], "")
+        self.assertEqual(vod["vod_play_url"], "")
