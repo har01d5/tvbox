@@ -169,3 +169,43 @@ class Spider(BaseSpider):
             "filters": self._fetch_filters(classes),
             "list": self.homeVideoContent()["list"],
         }
+
+    def _page_result(self, items, pg, limit):
+        values = list(items or [])
+        return {
+            "page": int(pg),
+            "limit": limit,
+            "total": len(values),
+            "list": values,
+        }
+
+    def categoryContent(self, tid, pg, filter, extend):
+        options = dict(extend or {})
+        try:
+            data = self._fetch_api(
+                "/sk-api/vod/list",
+                {
+                    "typeId": str(tid),
+                    "page": int(pg),
+                    "limit": 18,
+                    "type": options.get("sort", "updateTime"),
+                    "area": options.get("area", ""),
+                    "lang": options.get("lang", ""),
+                    "year": options.get("year", ""),
+                    "mtype": "",
+                    "extendtype": options.get("class", ""),
+                },
+            )
+            return self._page_result(data.get("data") or [], pg, 18)
+        except Exception:
+            return self._page_result([], pg, 18)
+
+    def searchContent(self, key, quick, pg="1"):
+        try:
+            data = self._fetch_api(
+                "/sk-api/search/pages",
+                {"keyword": str(key or ""), "page": int(pg), "limit": 10, "typeId": -1},
+            )
+            return self._page_result(data.get("data") or [], pg, 10)
+        except Exception:
+            return self._page_result([], pg, 10)

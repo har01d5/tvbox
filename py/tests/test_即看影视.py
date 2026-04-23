@@ -111,6 +111,60 @@ class TestJiKanYingShiSpider(unittest.TestCase):
         self.assertEqual(filters["1"][0]["value"][1], {"n": "动作", "v": "动作"})
         self.assertEqual(filters["1"][-1]["value"][-1], {"n": "评分", "v": "score"})
 
+    @patch.object(Spider, "_fetch_api")
+    def test_category_content_maps_extend_to_sk_api_params(self, mock_fetch_api):
+        mock_fetch_api.return_value = {"data": [{"vod_id": "c1", "vod_name": "分类片"}]}
+
+        result = self.spider.categoryContent(
+            "2",
+            "3",
+            False,
+            {"sort": "hot", "area": "香港", "lang": "粤语", "year": "2025", "class": "动作"},
+        )
+
+        self.assertEqual(
+            mock_fetch_api.call_args.args,
+            (
+                "/sk-api/vod/list",
+                {
+                    "typeId": "2",
+                    "page": 3,
+                    "limit": 18,
+                    "type": "hot",
+                    "area": "香港",
+                    "lang": "粤语",
+                    "year": "2025",
+                    "mtype": "",
+                    "extendtype": "动作",
+                },
+            ),
+        )
+        self.assertEqual(result["page"], 3)
+        self.assertNotIn("pagecount", result)
+
+    @patch.object(Spider, "_fetch_api")
+    def test_search_content_returns_standard_page_payload(self, mock_fetch_api):
+        mock_fetch_api.return_value = {"data": [{"vod_id": "s1", "vod_name": "繁花"}]}
+
+        result = self.spider.searchContent("繁花", False, "4")
+
+        self.assertEqual(
+            mock_fetch_api.call_args.args,
+            ("/sk-api/search/pages", {"keyword": "繁花", "page": 4, "limit": 10, "typeId": -1}),
+        )
+        self.assertEqual(result["page"], 4)
+        self.assertEqual(result["list"][0]["vod_id"], "s1")
+        self.assertNotIn("pagecount", result)
+
+    @patch.object(Spider, "_fetch_api")
+    def test_category_content_returns_empty_list_on_api_error(self, mock_fetch_api):
+        mock_fetch_api.side_effect = RuntimeError("boom")
+
+        result = self.spider.categoryContent("1", "1", False, {})
+
+        self.assertEqual(result["list"], [])
+        self.assertEqual(result["total"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
