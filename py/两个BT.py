@@ -79,7 +79,18 @@ class Spider(BaseSpider):
         return {"list": [detail]} if detail else {"list": []}
 
     def playerContent(self, flag, id, vipFlags):
-        return {"parse": 1, "jx": 1, "playUrl": "", "url": "", "header": {}}
+        play_id = str(id or "").strip()
+        if self._is_media_url(play_id):
+            return self._build_player_result(play_id, self.host + "/")
+
+        meta = self._decode_play_id(play_id)
+        pid = meta.get("pid") or play_id
+        play_page_url = self.host + f"/v_play/{pid}.html"
+        html = self._request_html(play_page_url, referer=self.host + "/")
+        media_url = self._extract_media_url(html)
+        if media_url:
+            return self._build_player_result(media_url, play_page_url)
+        return self._build_parse_result(play_page_url, play_page_url)
 
     def _request_html(self, url, referer=None):
         headers = dict(self.headers)
@@ -237,6 +248,49 @@ class Spider(BaseSpider):
     def _extract_meta_text(self, root, label):
         text = self._first_text(root, f"//*[contains(text(),'{label}')][1]")
         return re.sub(rf"^{label}[:：]?", "", text).strip()
+
+    def _extract_media_url(self, html):
+        body = str(html or "")
+        patterns = [
+            r'(https?://[^"\'\s<>]+\.(?:m3u8|mp4|flv|avi|mkv|ts)(?:\?[^"\'\s<>]*)?)',
+            r'"url"\s*:\s*"([^"]+\.(?:m3u8|mp4|flv|avi|mkv|ts)[^"]*)"',
+            r"'url'\s*:\s*'([^']+\.(?:m3u8|mp4|flv|avi|mkv|ts)[^']*)'",
+        ]
+        for pattern in patterns:
+            matched = re.search(pattern, body, re.I)
+            if matched:
+                value = matched.group(1) if matched.groups() else matched.group(0)
+                return self._abs_url(value)
+        return ""
+
+    def _is_media_url(self, value):
+        return bool(re.search(r"\.(?:m3u8|mp4|flv|avi|mkv|ts)(?:\?|#|$)", str(value or ""), re.I))
+
+    def _build_player_result(self, url, referer):
+        return {
+            "parse": 0,
+            "jx": 0,
+            "playUrl": "",
+            "url": str(url or ""),
+            "header": {
+                "User-Agent": self.headers["User-Agent"],
+                "Referer": str(referer or self.host + "/"),
+                "Origin": self.host,
+            },
+        }
+
+    def _build_parse_result(self, url, referer):
+        return {
+            "parse": 1,
+            "jx": 1,
+            "playUrl": "",
+            "url": str(url or ""),
+            "header": {
+                "User-Agent": self.headers["User-Agent"],
+                "Referer": str(referer or self.host + "/"),
+                "Origin": self.host,
+            },
+        }
 
     def _abs_url(self, value):
         raw = str(value or "").strip()

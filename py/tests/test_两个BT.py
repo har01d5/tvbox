@@ -169,6 +169,28 @@ class TestLiangGeBTSpider(unittest.TestCase):
         self.assertEqual(self.spider._decode_play_id(first_id)["pid"], "play-1")
         self.assertEqual(self.spider._decode_play_id(first_id)["sid"], "900")
 
+    def test_player_content_passthroughs_direct_media_url(self):
+        result = self.spider.playerContent("两个BT", "https://media.example/direct.m3u8", {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["jx"], 0)
+        self.assertEqual(result["url"], "https://media.example/direct.m3u8")
+        self.assertEqual(result["header"]["Referer"], "https://www.bttwoo.com/")
+
+    @patch.object(Spider, "_request_html")
+    def test_player_content_extracts_media_from_play_page(self, mock_request_html):
+        mock_request_html.return_value = """
+        <script>
+        var player_data = {"url":"https://media.example/final.mp4"};
+        </script>
+        """
+        play_id = self.spider._encode_play_id("play-100", "900", "第1集")
+        result = self.spider.playerContent("两个BT", play_id, {})
+        self.assertEqual(mock_request_html.call_args.args[0], "https://www.bttwoo.com/v_play/play-100.html")
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["jx"], 0)
+        self.assertEqual(result["url"], "https://media.example/final.mp4")
+        self.assertEqual(result["header"]["Referer"], "https://www.bttwoo.com/v_play/play-100.html")
+
 
 if __name__ == "__main__":
     unittest.main()
