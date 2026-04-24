@@ -1,7 +1,11 @@
+from base64 import b64encode
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from unittest.mock import patch
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = SourceFileLoader("lumman_spider", str(ROOT / "路漫漫.py")).load_module()
@@ -118,6 +122,44 @@ class TestLuManManSpider(unittest.TestCase):
         vod = result["list"][0]
         self.assertEqual(vod["vod_play_from"], "播放列表")
         self.assertEqual(vod["vod_play_url"], "正片$vod/play/1-1-1.html")
+
+    def test_decrypt_token_returns_plaintext(self):
+        key = b"ejjooopppqqqrwww"
+        iv = b"1348987635684651"
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        token = b64encode(cipher.encrypt(pad(b"plain-token", AES.block_size))).decode("utf-8")
+        self.assertEqual(self.spider._decrypt_token(token), "plain-token")
+
+    def test_decrypt_token_handles_bad_ciphertext(self):
+        self.assertEqual(self.spider._decrypt_token("not-valid"), "")
+
+    @patch.object(Spider, "_resolve_player_url")
+    def test_player_content_returns_direct_media_without_parse(self, mock_resolve):
+        result = self.spider.playerContent("在线播放", "https://cdn.example.com/video.m3u8", {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://cdn.example.com/video.m3u8")
+        mock_resolve.assert_not_called()
+
+    @patch.object(Spider, "_resolve_player_url")
+    @patch.object(Spider, "_get_html")
+    def test_player_content_decodes_encrypt_1_and_encrypt_2(self, mock_html, mock_resolve):
+        encoded = b64encode("https://cdn.example.com/e2.m3u8".encode("utf-8")).decode("utf-8")
+        mock_html.side_effect = [
+            '<script>var player_aaaa={"url":"https%3A%2F%2Fcdn.example.com%2Fe1.m3u8","encrypt":"1","from":"line"};</script>',
+            f'<script>var player_aaaa={{"url":"{encoded}","encrypt":"2","from":"line"}};</script>',
+        ]
+        mock_resolve.side_effect = ["https://cdn.example.com/e1.m3u8", "https://cdn.example.com/e2.m3u8"]
+        first = self.spider.playerContent("在线播放", "vod/play/1001-1-1.html", {})
+        second = self.spider.playerContent("在线播放", "vod/play/1001-1-2.html", {})
+        self.assertEqual(first["url"], "https://cdn.example.com/e1.m3u8")
+        self.assertEqual(second["url"], "https://cdn.example.com/e2.m3u8")
+
+    @patch.object(Spider, "_resolve_player_url", return_value="")
+    @patch.object(Spider, "_get_html", return_value="<html><body>missing player</body></html>")
+    def test_player_content_falls_back_to_parse_when_player_missing(self, mock_html, mock_resolve):
+        result = self.spider.playerContent("在线播放", "vod/play/1001-1-1.html", {})
+        self.assertEqual(result["parse"], 1)
+        self.assertEqual(result["url"], "https://www.lmm85.com/vod/play/1001-1-1.html")
 
 
 if __name__ == "__main__":

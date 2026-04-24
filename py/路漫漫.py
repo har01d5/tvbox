@@ -1,7 +1,12 @@
 # coding=utf-8
+import base64
+import json
 import re
 import sys
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, unquote, urljoin
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
 
 from base.spider import Spider as BaseSpider
 
@@ -60,6 +65,10 @@ class Spider(BaseSpider):
         raw = str(href or "").strip()
         matched = re.search(r"(/vod/play/[^?#]+\.html)", raw)
         return matched.group(1).lstrip("/") if matched else raw.lstrip("/")
+
+    def _decode_play_id(self, play_id):
+        raw = str(play_id or "").strip().lstrip("/")
+        return self._abs_url(raw)
 
     def _clean_text(self, text):
         return re.sub(r"\s+", " ", str(text or "")).strip()
@@ -184,3 +193,60 @@ class Spider(BaseSpider):
             "vod_play_url": "$$$".join(urls for _, urls in groups),
         }
         return {"list": [vod]}
+
+    def _decode_player_url(self, raw_url, encrypt):
+        value = str(raw_url or "").strip()
+        mode = str(encrypt or "0").strip()
+        if mode == "1":
+            return unquote(value)
+        if mode == "2":
+            try:
+                return unquote(base64.b64decode(value).decode("utf-8"))
+            except Exception:
+                return ""
+        return value
+
+    def _extract_player_data(self, html):
+        matched = re.search(r"player_[a-z0-9_]+\s*=\s*(\{[\s\S]*?\})\s*;?", str(html or ""), re.I)
+        if not matched:
+            return {}
+        try:
+            return json.loads(matched.group(1))
+        except Exception:
+            return {}
+
+    def _decrypt_token(self, token):
+        try:
+            payload = base64.b64decode(str(token or ""))
+            cipher = AES.new(b"ejjooopppqqqrwww", AES.MODE_CBC, b"1348987635684651")
+            value = unpad(cipher.decrypt(payload), AES.block_size)
+            return value.decode("utf-8")
+        except Exception:
+            return ""
+
+    def _is_media_url(self, url):
+        return bool(re.search(r"\.(m3u8|mp4|flv|avi|mkv|ts)(?:[?#]|$)", str(url or ""), re.I))
+
+    def _build_player_headers(self, referer):
+        return {
+            "User-Agent": self.mobile_ua,
+            "Referer": referer,
+            "Origin": self.host,
+        }
+
+    def _resolve_player_url(self, player, play_page_url):
+        media = self._decode_player_url(player.get("url", ""), player.get("encrypt", "0"))
+        if self._is_media_url(media):
+            return media.split("&", 1)[0]
+        return ""
+
+    def playerContent(self, flag, id, vipFlags):
+        play_page_url = self._decode_play_id(id)
+        if self._is_media_url(play_page_url):
+            return {"parse": 0, "url": play_page_url, "header": self._build_player_headers(self.host + "/")}
+        body = self._get_html(play_page_url, headers={"Referer": self.host + "/"})
+        player = self._extract_player_data(body)
+        real_url = self._resolve_player_url(player, play_page_url)
+        if real_url:
+            return {"parse": 0, "url": real_url, "header": self._build_player_headers(play_page_url)}
+        return {"parse": 1, "url": play_page_url, "header": self._build_player_headers(self.host + "/")}
