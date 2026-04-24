@@ -356,7 +356,7 @@ class Spider(BaseSpider):
                 "corp": "kuwo",
                 "albumid": album_id,
                 "pn": 0,
-                "rn": 5000,
+                "rn": 2000,
                 "show_copyright_off": 1,
                 "vipver": "MUSIC_8.2.0.0_BCS17",
                 "mobi": 1,

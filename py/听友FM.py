@@ -2,9 +2,12 @@
 import json
 import re
 import sys
+import time
+from hashlib import sha256
 from urllib.parse import quote
 
 from Crypto.Cipher import AES
+from Crypto.Cipher import ChaCha20_Poly1305
 from Crypto.Random import get_random_bytes
 from lxml import html as lxml_html
 
@@ -39,7 +42,6 @@ class Spider(BaseSpider):
             {"type_id": "15", "type_name": "历史军事"},
             {"type_id": "9", "type_name": "百家讲坛"},
         ]
-        self._xchacha_decrypt = None
 
     def init(self, extend=""):
         return None
@@ -97,35 +99,85 @@ class Spider(BaseSpider):
         encrypted, tag = cipher.encrypt_and_digest(str(plain_text or "").encode("utf-8"))
         return self._bytes_to_hex(bytes([self.payload_version]) + iv + encrypted + tag)
 
+    def _decrypt_xchacha_body(self, key, nonce, body):
+        cipher = ChaCha20_Poly1305.new(key=key, nonce=nonce)
+        return cipher.decrypt_and_verify(body[:-16], body[-16:])
+
+    def _decrypt_aes_gcm_payload(self, raw, attempts):
+        key = self._hex_to_bytes(self.payload_key_hex)
+        last_error = None
+        for iv_start, cipher_start in attempts:
+            try:
+                iv = raw[iv_start:iv_start + 12]
+                body = raw[cipher_start:]
+                encrypted = body[:-16]
+                tag = body[-16:]
+                cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
+                return cipher.decrypt_and_verify(encrypted, tag).decode("utf-8")
+            except Exception as exc:
+                last_error = exc
+        if last_error:
+            raise last_error
+        raise ValueError("aes decrypt failed")
+
     def _decrypt_payload(self, hex_text):
         raw = self._hex_to_bytes(hex_text)
         if len(raw) < 2:
             raise ValueError("payload too short")
         version = raw[0]
+        key = self._hex_to_bytes(self.payload_key_hex)
         if version == 1:
-            iv = raw[1:13]
-            body = raw[13:]
-            encrypted = body[:-16]
-            tag = body[-16:]
-            cipher = AES.new(self._hex_to_bytes(self.payload_key_hex), AES.MODE_GCM, nonce=iv)
-            plain = cipher.decrypt_and_verify(encrypted, tag)
-            return plain.decode("utf-8")
+            if len(raw) >= 41:
+                try:
+                    plain = self._decrypt_xchacha_body(key, raw[1:25], raw[25:])
+                    return plain.decode("utf-8")
+                except Exception:
+                    pass
+            return self._decrypt_aes_gcm_payload(raw, [(1, 13), (0, 12), (2, 14)])
         if version == 2:
-            decryptor = getattr(self, "_xchacha_decrypt", None)
-            if not callable(decryptor):
-                raise ValueError("xchacha decryptor unavailable")
             nonce = raw[1:25]
-            cipher = raw[25:][::-1]
-            plain = decryptor(self._hex_to_bytes(self.payload_key_hex), nonce, cipher)
+            body = raw[25:][::-1]
+            plain = self._decrypt_xchacha_body(key, nonce, body)
             return bytes(plain).decode("utf-8")
         raise ValueError("unsupported payload version")
 
+    def _make_dfp_cookie(self):
+        today_hex = format(int(time.strftime("%Y%m%d")), "x")
+        seed = f"{time.time()}|tingyou|{get_random_bytes(8).hex()}".encode("utf-8")
+        return f"dfp=f-{today_hex}:f-{sha256(seed).hexdigest()}"
+
     def _decode_nuxt_value(self, table, node, seen=None):
         seen = seen or {}
+        markers = {
+            "ShallowReactive",
+            "Reactive",
+            "Ref",
+            "EmptyRef",
+            "Set",
+            "Map",
+            "Date",
+            "RegExp",
+            "BigInt",
+            "null",
+            "undefined",
+            "NaN",
+            "-0",
+            "Infinity",
+            "-Infinity",
+        }
         if isinstance(node, int) and 0 <= node < len(table):
             if node in seen:
                 return seen[node]
             raw = table[node]
+            if isinstance(raw, list) and raw and isinstance(raw[0], str) and raw[0] in markers:
+                marker = raw[0]
+                if marker in ("ShallowReactive", "Reactive", "Ref"):
+                    value = self._decode_nuxt_value(table, raw[1] if len(raw) > 1 else None, seen)
+                    seen[node] = value
+                    return value
+                if marker in ("EmptyRef", "null", "undefined", "NaN"):
+                    seen[node] = None
+                    return None
             if isinstance(raw, dict):
                 seen[node] = {}
                 for key, value in raw.items():
@@ -152,10 +204,7 @@ class Spider(BaseSpider):
         except Exception:
             return {}
         if isinstance(payload, list) and len(payload) > 1:
-            root = payload[1]
-            if isinstance(root, dict):
-                return root
-            return self._decode_nuxt_value(payload, root)
+            return self._decode_nuxt_value(payload, 1)
         return payload if isinstance(payload, dict) else {}
 
     def _pick_image(self, node):
@@ -223,6 +272,42 @@ class Spider(BaseSpider):
             item = self._parse_album_anchor(anchor, fallback_type_id, fallback_type_name)
             if item:
                 items.append(item)
+        return self._unique_by_id(items)
+
+    def _parse_home_nuxt(self, html):
+        root = self._load_nuxt_root(html)
+        tabs = ((root.get("data") or {}).get("index-home-tabs") or {})
+        items = []
+        for bucket in tabs.values():
+            tab_items = bucket.get("items") if isinstance(bucket, dict) else None
+            if not isinstance(tab_items, list):
+                continue
+            for item in tab_items:
+                album_id = str((item or {}).get("id") or "").strip()
+                if not album_id:
+                    continue
+                status = "连载中" if str(item.get("status")) == "1" else "已完结" if str(item.get("status")) == "0" else ""
+                remarks = " · ".join(
+                    [
+                        value
+                        for value in [
+                            f"{item.get('chapterTotal')}期" if item.get("chapterTotal") else "",
+                            status,
+                            str(item.get("teller") or item.get("author") or "").strip(),
+                        ]
+                        if value
+                    ]
+                )
+                items.append(
+                    {
+                        "vod_id": album_id,
+                        "vod_name": str(item.get("title") or ("专辑" + album_id)),
+                        "vod_pic": self._normalize_url(item.get("cover") or item.get("cover_url") or ""),
+                        "vod_remarks": remarks,
+                        "type_id": "",
+                        "type_name": str(item.get("categoryName") or "").strip(),
+                    }
+                )
         return self._unique_by_id(items)
 
     def _map_nuxt_album_item(self, item, tid, type_name):
@@ -317,12 +402,30 @@ class Spider(BaseSpider):
             if text.startswith("分类:"):
                 type_name = text.split(":", 1)[1].strip()
                 break
+        root = self._load_nuxt_root(html)
+        nuxt_data = root.get("data") or {}
+        album_detail = nuxt_data.get(f"album-detail-{album_id}") or {}
+        album_chapters = nuxt_data.get(f"album-chapters-{album_id}") or {}
+        if not name:
+            name = str(album_detail.get("title") or "").strip()
+        if not pic:
+            pic = self._normalize_url(album_detail.get("cover_url") or "")
+        if not content:
+            content = str(album_detail.get("synopsis") or "").strip()
         play_items = []
-        for index, item in enumerate(document.xpath("//ul[contains(@class, 'chapter-list')]/li[contains(@class, 'chapter-item')]"), start=1):
-            num_text = self._safe_text(next(iter(item.xpath("./p")), None))
-            title = self._safe_text(next(iter(item.xpath(".//*[contains(@class, 'title')]")), None)) or f"第{index}集"
-            chapter_idx = int(num_text) if str(num_text).isdigit() else index
-            play_items.append(f"{title}${album_id}|{chapter_idx}")
+        chapters = album_chapters.get("chapters") or []
+        if isinstance(chapters, list) and chapters:
+            for index, item in enumerate(chapters, start=1):
+                raw_index = item.get("index")
+                chapter_idx = int(raw_index) if isinstance(raw_index, (int, str)) and str(raw_index).isdigit() else index
+                title = str(item.get("title") or f"第{chapter_idx}集").strip()
+                play_items.append(f"{title}${album_id}|{chapter_idx}")
+        else:
+            for index, item in enumerate(document.xpath("//ul[contains(@class, 'chapter-list')]/li[contains(@class, 'chapter-item')]"), start=1):
+                num_text = self._safe_text(next(iter(item.xpath("./p")), None))
+                title = self._safe_text(next(iter(item.xpath(".//*[contains(@class, 'title')]")), None)) or f"第{index}集"
+                chapter_idx = int(num_text) if str(num_text).isdigit() else index
+                play_items.append(f"{title}${album_id}|{chapter_idx}")
         return {
             "vod_id": str(album_id),
             "vod_name": name or ("专辑" + str(album_id)),
@@ -349,10 +452,16 @@ class Spider(BaseSpider):
                 return plain
         return value
 
-    def _api_post(self, path, body):
+    def _api_post(self, path, body=None, extra_headers=None):
         url = path if str(path).startswith("http") else self.host + (path if str(path).startswith("/") else "/" + str(path))
-        payload = self._encrypt_payload(json.dumps(body or {}, ensure_ascii=False, separators=(",", ":")))
-        headers = self._get_headers({"Content-Type": "text/plain", "X-Payload-Version": str(self.payload_version)})
+        payload = None
+        if body is not None:
+            payload = self._encrypt_payload(json.dumps(body, ensure_ascii=False, separators=(",", ":")))
+        headers = self._get_headers({"X-Payload-Version": str(self.payload_version)})
+        if payload is not None:
+            headers["Content-Type"] = "text/plain"
+        if extra_headers:
+            headers.update(extra_headers)
         response = self.post(url, data=payload, headers=headers, timeout=10, verify=False)
         if getattr(response, "status_code", 0) >= 400:
             raise ValueError("api request failed")
@@ -388,6 +497,16 @@ class Spider(BaseSpider):
                 return candidate
         return ""
 
+    def _anonymous_auth(self):
+        cookie = self._make_dfp_cookie()
+        data = self._api_post("/api/me", None, extra_headers={"Accept": "application/json", "Cookie": cookie})
+        auth_token = str((data or {}).get("auth_token") or "").strip()
+        return {
+            "auth_token": auth_token,
+            "cookie": cookie,
+            "data": data or {},
+        }
+
     def homeContent(self, filter):
         html = self._get_html("/")
         document = self._load_html(html)
@@ -403,7 +522,8 @@ class Spider(BaseSpider):
                 continue
             seen.add(type_id)
             classes.append({"type_id": type_id, "type_name": self._safe_text(anchor) or self._category_name(type_id)})
-        return {"class": classes or list(self.classes), "list": self._parse_home_list(html)[:20]}
+        items = self._parse_home_nuxt(html) or self._parse_home_list(html)
+        return {"class": classes or list(self.classes), "list": items[:20]}
 
     def homeVideoContent(self):
         return {"list": self.homeContent(False).get("list", [])}
@@ -443,11 +563,22 @@ class Spider(BaseSpider):
         album_id, chapter_idx = str(id or "").split("|", 1)
         fallback = f"{self.host}/audios/{album_id}/{chapter_idx}"
         try:
-            payload = self._api_post("/api/play_token", {"album_id": int(album_id), "chapter_idx": int(chapter_idx)})
+            auth = self._anonymous_auth()
+            extra_headers = {
+                "Accept": "application/json",
+                "Cookie": auth.get("cookie", ""),
+            }
+            if auth.get("auth_token"):
+                extra_headers["Authorization"] = f"Bearer {auth['auth_token']}"
+            payload = self._api_post(
+                "/api/play_token",
+                {"album_id": int(album_id), "chapter_idx": int(chapter_idx)},
+                extra_headers=extra_headers,
+            )
             data = self._normalize_api_result(payload)
             url = self._extract_play_url(data)
             if url:
-                return {"parse": 0, "url": url, "header": self._get_headers()}
+                return {"parse": 0, "url": url, "header": self._get_headers(extra_headers)}
         except Exception:
             pass
         return {"parse": 1, "url": fallback, "header": self._get_headers()}
