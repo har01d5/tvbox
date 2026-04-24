@@ -96,21 +96,58 @@ class TestRuYiSpider(unittest.TestCase):
         self.assertEqual(mock_request_json.call_args.args[0], {"ac": "list", "pg": "1", "pagesize": "20"})
 
     @patch.object(Spider, "_request_json")
+    def test_home_video_content_enriches_missing_cover_from_videolist(self, mock_request_json):
+        mock_request_json.side_effect = [
+            {
+                "list": [
+                    {
+                        "vod_id": "101",
+                        "vod_name": "推荐影片",
+                        "vod_pic": "",
+                        "vod_remarks": "更新至1集",
+                        "vod_year": "2025",
+                        "type_id": "7",
+                    }
+                ]
+            },
+            {
+                "list": [
+                    {
+                        "vod_id": "101",
+                        "vod_pic": "/detail-cover.jpg",
+                    }
+                ]
+            },
+        ]
+        result = self.spider.homeVideoContent()
+        self.assertEqual(result["list"][0]["vod_pic"], "https://ps.ryzypics.com/detail-cover.jpg")
+        self.assertEqual(
+            mock_request_json.call_args_list[1].args[0],
+            {"ac": "videolist", "ids": "101"},
+        )
+
+    @patch.object(Spider, "_request_json")
     def test_category_content_uses_default_sub_type_for_main_class(self, mock_request_json):
-        mock_request_json.return_value = {
-            "list": [
-                {
-                    "vod_id": "202",
-                    "vod_name": "动作电影",
-                    "vod_pic": "",
-                    "vod_remarks": "HD",
-                    "vod_year": "2024",
-                    "type_id": "7",
-                }
-            ]
-        }
+        mock_request_json.side_effect = [
+            {
+                "list": [
+                    {
+                        "vod_id": "202",
+                        "vod_name": "动作电影",
+                        "vod_pic": "",
+                        "vod_remarks": "HD",
+                        "vod_year": "2024",
+                        "type_id": "7",
+                    }
+                ]
+            },
+            {"list": []},
+        ]
         result = self.spider.categoryContent("1", "2", False, {})
-        self.assertEqual(mock_request_json.call_args.args[0], {"ac": "list", "t": "7", "pg": "2", "pagesize": "20"})
+        self.assertEqual(
+            mock_request_json.call_args_list[0].args[0],
+            {"ac": "list", "t": "7", "pg": "2", "pagesize": "20"},
+        )
         self.assertEqual(result["page"], 2)
         self.assertEqual(result["limit"], 20)
         self.assertEqual(result["list"][0]["vod_id"], "202")

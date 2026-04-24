@@ -152,6 +152,29 @@ class Spider(BaseSpider):
             )
         return result
 
+    def _enrich_missing_covers(self, items):
+        missing_ids = [item["vod_id"] for item in items if not item.get("vod_pic")]
+        if not missing_ids:
+            return items
+        data = self._request_json({"ac": "videolist", "ids": ",".join(missing_ids)})
+        cover_map = {}
+        for item in data.get("list", []) or []:
+            current = item or {}
+            vod_id = str(current.get("vod_id", "")).strip()
+            if not vod_id:
+                continue
+            cover = (
+                self._get_pic_url(current.get("vod_pic", ""))
+                or self._get_pic_url(current.get("vod_img", ""))
+                or self._get_pic_url(current.get("pic", ""))
+            )
+            if cover:
+                cover_map[vod_id] = cover
+        for item in items:
+            if not item.get("vod_pic") and item["vod_id"] in cover_map:
+                item["vod_pic"] = cover_map[item["vod_id"]]
+        return items
+
     def _build_filters(self):
         filters = {}
         for cls in self.classes:
@@ -180,12 +203,14 @@ class Spider(BaseSpider):
 
     def homeVideoContent(self):
         data = self._request_json({"ac": "list", "pg": "1", "pagesize": "20"})
-        return {"list": self._format_vod_list(data.get("list", []))}
+        items = self._format_vod_list(data.get("list", []))
+        return {"list": self._enrich_missing_covers(items)}
 
     def categoryContent(self, tid, pg, filter, extend):
         params = {"ac": "list", "t": self._resolve_type_id(tid, extend), "pg": str(pg), "pagesize": "20"}
         data = self._request_json(params)
-        return self._page_result(self._format_vod_list(data.get("list", [])), pg, 20)
+        items = self._enrich_missing_covers(self._format_vod_list(data.get("list", [])))
+        return self._page_result(items, pg, 20)
 
     def searchContent(self, key, quick, pg="1"):
         keyword = str(key or "").strip()
@@ -198,6 +223,7 @@ class Spider(BaseSpider):
             for item in self._format_vod_list(data.get("list", []))
             if keyword.lower() in item["vod_name"].lower()
         ]
+        items = self._enrich_missing_covers(items)
         return self._page_result(items, page, 30)
 
     def _parse_play_groups(self, play_from, play_url):
