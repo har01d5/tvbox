@@ -67,6 +67,33 @@ class Spider(BaseSpider):
             return ""
         return str(response.text or "")
 
+    def _ajax_headers(self, referer):
+        headers = {
+            "User-Agent": self.user_agent,
+            "Referer": referer,
+            "Origin": self.host,
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        }
+        if self.cookie:
+            headers["Cookie"] = self.cookie
+        return headers
+
+    def _request_json(self, url, data=None, headers=None):
+        response = self.post(
+            url,
+            data=data,
+            headers=headers or self._ajax_headers(self.host + "/"),
+            timeout=10,
+            verify=False,
+        )
+        if response.status_code != 200:
+            return {}
+        try:
+            return json.loads(str(response.text or ""))
+        except Exception:
+            return {}
+
     def _extract_cards(self, html):
         root = self.html(html or "")
         if root is None:
@@ -259,6 +286,83 @@ class Spider(BaseSpider):
                 }
             ]
         }
+
+    def _normalize_play_links(self, items):
+        results = []
+        for item in items or []:
+            raw_url = str((item or {}).get("m3u8_url") or (item or {}).get("preview_m3u8_url") or "").strip()
+            if not raw_url:
+                continue
+            results.append(
+                {
+                    "line_id": str((item or {}).get("id") or "").strip(),
+                    "name": self._clean_text((item or {}).get("name")) or str((item or {}).get("id") or "线路"),
+                    "url": urljoin(self.host + "/", raw_url),
+                }
+            )
+        return results
+
+    def _build_player_headers(self, referer, with_origin=False):
+        headers = {"User-Agent": self.user_agent, "Referer": referer}
+        if with_origin:
+            headers["Origin"] = self.host
+        return headers
+
+    def _build_direct_result(self, entries, referer):
+        return {
+            "parse": 0,
+            "playUrl": "",
+            "url": entries[0]["url"] if entries else "",
+            "urls": [{"name": item["name"], "url": item["url"]} for item in entries],
+            "header": self._build_player_headers(referer, with_origin=True),
+        }
+
+    def _build_parse_result(self, url):
+        return {
+            "parse": 1,
+            "playUrl": "",
+            "url": url,
+            "header": self._build_player_headers(url),
+        }
+
+    def playerContent(self, flag, id, vipFlags):
+        raw = str(id or "").strip()
+        if not raw:
+            return {"parse": 0, "playUrl": "", "url": "", "header": {}}
+        if re.search(r"\.(m3u8|mp4|flv)(?:\?|#|$)", raw, re.I):
+            return {
+                "parse": 0,
+                "playUrl": "",
+                "url": raw,
+                "header": self._build_player_headers(self.host + "/", with_origin=True),
+            }
+
+        meta = self._decode_play_id(raw)
+        page_url = str(meta.get("page") or "").strip()
+        if not page_url:
+            movie_id = str(meta.get("movie_id") or "").strip()
+            page_url = self.host + "/movie/detail/" + movie_id if movie_id else self.host + "/"
+
+        html = self._request_html(page_url, self._page_headers(self.host + "/"))
+        state = self._extract_page_state(html)
+        movie_id = str(meta.get("movie_id") or state.get("movieId") or "").strip()
+        link_id = str(meta.get("link_id") or state.get("linkId") or "").strip()
+        line_id = str(meta.get("line_id") or "").strip()
+
+        if movie_id and link_id:
+            payload = self._request_json(
+                self.host + "/movie/detail/" + movie_id,
+                data={"link_id": link_id, "is_switch": 1},
+                headers=self._ajax_headers(page_url),
+            )
+            data = (payload or {}).get("data") or {}
+            urls = self._normalize_play_links(data.get("play_links") or [])
+            if line_id:
+                urls = [item for item in urls if item["line_id"] == line_id]
+            if urls:
+                return self._build_direct_result(urls, page_url)
+
+        return self._build_parse_result(page_url)
 
     def _encode_play_id(self, payload):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))

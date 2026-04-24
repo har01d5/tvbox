@@ -156,6 +156,116 @@ class TestFKTVSpider(unittest.TestCase):
         self.assertIn("ep-9", vod["vod_play_url"])
         self.assertIn("VIP", vod["vod_remarks"])
 
+    def test_player_content_returns_direct_media_without_request(self):
+        result = self.spider.playerContent("fktv", "https://cdn.example.com/demo.m3u8", {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://cdn.example.com/demo.m3u8")
+
+    @patch.object(Spider, "_request_json")
+    @patch.object(Spider, "_request_html")
+    def test_player_content_uses_switch_api_and_filters_by_line_id(
+        self, mock_request_html, mock_request_json
+    ):
+        play_id = self.spider._encode_play_id(
+            {
+                "movie_id": "9001",
+                "link_id": "ep-2",
+                "line_id": "line-b",
+                "line_name": "线路B",
+                "episode_name": "第2集",
+                "type": "switch",
+                "page": "https://fktv.me/movie/detail/9001",
+            }
+        )
+        mock_request_html.return_value = """
+        <script>
+          let movieId = '9001';
+          let linkId = 'ep-1';
+          var links = [{"id":"ep-1","name":"第1集"},{"id":"ep-2","name":"第2集"}];
+          var play_links = [];
+          var play_error_type = '';
+        </script>
+        """
+        mock_request_json.return_value = {
+            "status": True,
+            "data": {
+                "play_links": [
+                    {"id": "line-a", "name": "线路A", "m3u8_url": "/media/a.m3u8"},
+                    {"id": "line-b", "name": "线路B", "m3u8_url": "https://cdn.example.com/b.m3u8"},
+                ]
+            },
+        }
+        result = self.spider.playerContent("fktv", play_id, {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://cdn.example.com/b.m3u8")
+        self.assertEqual(mock_request_json.call_args.args[0], "https://fktv.me/movie/detail/9001")
+        self.assertEqual(
+            mock_request_json.call_args.kwargs["data"],
+            {"link_id": "ep-2", "is_switch": 1},
+        )
+
+    @patch.object(Spider, "_request_json")
+    @patch.object(Spider, "_request_html")
+    def test_player_content_returns_all_lines_when_line_not_specified(
+        self, mock_request_html, mock_request_json
+    ):
+        play_id = self.spider._encode_play_id(
+            {
+                "movie_id": "9003",
+                "link_id": "ep-8",
+                "line_id": "",
+                "line_name": "",
+                "episode_name": "正片",
+                "type": "switch",
+                "page": "https://fktv.me/movie/detail/9003",
+            }
+        )
+        mock_request_html.return_value = (
+            "<script>let movieId='9003';let linkId='ep-8';var links=[];"
+            "var play_links=[];var play_error_type='';</script>"
+        )
+        mock_request_json.return_value = {
+            "status": True,
+            "data": {
+                "play_links": [
+                    {"id": "line-a", "name": "线路A", "m3u8_url": "/media/a.m3u8"},
+                    {"id": "line-b", "name": "线路B", "preview_m3u8_url": "/media/b.m3u8"},
+                ]
+            },
+        }
+        result = self.spider.playerContent("fktv", play_id, {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(len(result["urls"]), 2)
+        self.assertEqual(result["url"], "https://fktv.me/media/a.m3u8")
+
+    @patch.object(Spider, "_request_json")
+    @patch.object(Spider, "_request_html")
+    def test_player_content_falls_back_to_detail_page_when_api_has_no_url(
+        self, mock_request_html, mock_request_json
+    ):
+        play_id = self.spider._encode_play_id(
+            {
+                "movie_id": "9004",
+                "link_id": "ep-3",
+                "line_id": "line-z",
+                "line_name": "线路Z",
+                "episode_name": "第3集",
+                "type": "switch",
+                "page": "https://fktv.me/movie/detail/9004",
+            }
+        )
+        mock_request_html.return_value = (
+            "<script>let movieId='9004';let linkId='ep-3';var links=[];"
+            "var play_links=[];var play_error_type='need_vip';</script>"
+        )
+        mock_request_json.return_value = {
+            "status": True,
+            "data": {"play_links": [], "play_error_type": "need_vip"},
+        }
+        result = self.spider.playerContent("fktv", play_id, {})
+        self.assertEqual(result["parse"], 1)
+        self.assertEqual(result["url"], "https://fktv.me/movie/detail/9004")
+
 
 if __name__ == "__main__":
     unittest.main()
