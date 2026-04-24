@@ -142,6 +142,50 @@ class TestKuWoTingShuSpider(unittest.TestCase):
         self.assertEqual(vod["vod_play_url"], "1.第一集$free|MUSIC_1#2.💎第二集$vip|MUSIC_2")
         self.assertEqual(vod["vod_remarks"], "会员 | 已完结 | 共2集 | 800播放")
 
+    @patch.object(Spider, "_search_get")
+    def test_detail_content_paginates_tracks_beyond_2000(self, mock_search_get):
+        first_page_tracks = [
+            {"name": f"第{i}集", "musicrid": f"MUSIC_{i}", "playcnt": "1", "payInfo": {"feeType": {"bookvip": "0"}}}
+            for i in range(1, 2001)
+        ]
+        second_page_tracks = [
+            {"name": f"第{i}集", "musicrid": f"MUSIC_{i}", "playcnt": "1", "payInfo": {"feeType": {"bookvip": "0"}}}
+            for i in range(2001, 2006)
+        ]
+        mock_search_get.side_effect = [
+            {
+                "name": "长篇评书",
+                "img": "cover.jpg",
+                "info": "超长连载",
+                "artist": "播音员",
+                "company": "酷我出品",
+                "pub": "2026-04-24",
+                "lang": "普通话",
+                "finished": "0",
+                "vip": "0",
+                "songnum": "2005",
+                "musiclist": first_page_tracks,
+            },
+            {
+                "name": "长篇评书",
+                "songnum": "2005",
+                "musiclist": second_page_tracks,
+            },
+        ]
+
+        result = self.spider.detailContent(["999"])
+
+        vod = result["list"][0]
+        play_items = vod["vod_play_url"].split("#")
+        self.assertEqual(len(play_items), 2005)
+        self.assertEqual(play_items[0], "1.第1集$free|MUSIC_1")
+        self.assertEqual(play_items[-1], "2005.第2005集$free|MUSIC_2005")
+        self.assertEqual(vod["vod_remarks"], "免费 | 连载中 | 共2005集 | 2005播放")
+        self.assertEqual(mock_search_get.call_args_list[0].args[1]["pn"], 0)
+        self.assertEqual(mock_search_get.call_args_list[1].args[1]["pn"], 1)
+        self.assertEqual(mock_search_get.call_args_list[0].args[1]["rn"], 2000)
+        self.assertEqual(mock_search_get.call_args_list[1].args[1]["rn"], 2000)
+
     @patch.object(Spider, "_api_get")
     def test_player_content_resolves_free_track(self, mock_api_get):
         mock_api_get.return_value = {"data": {"url": "https://audio.example/free.mp3"}}

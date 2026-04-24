@@ -336,12 +336,8 @@ class Spider(BaseSpider):
             return f"http://img3.sycdn.kuwo.cn/star/albumcover/240/{image}"
         return image
 
-    def detailContent(self, ids):
-        album_id = str(ids[0] if isinstance(ids, list) and ids else ids).strip()
-        if not album_id:
-            return {"list": []}
-
-        payload = self._search_get(
+    def _fetch_album_detail_page(self, album_id, page, page_size=2000):
+        return self._search_get(
             "/r.s",
             {
                 "stype": "albuminfo",
@@ -355,14 +351,71 @@ class Spider(BaseSpider):
                 "bksource": "kwbook_ar_9.1.8.1_tvivo.apk",
                 "corp": "kuwo",
                 "albumid": album_id,
-                "pn": 0,
-                "rn": 2000,
+                "pn": page,
+                "rn": page_size,
                 "show_copyright_off": 1,
                 "vipver": "MUSIC_8.2.0.0_BCS17",
                 "mobi": 1,
                 "iskwbook": 1,
             },
         ) or {}
+
+    def _fetch_album_detail(self, album_id, page_size=2000, max_pages=20):
+        merged_payload = {}
+        tracks = []
+        seen_track_ids = set()
+        total_expected = 0
+
+        for page in range(max_pages):
+            payload = self._fetch_album_detail_page(album_id, page, page_size)
+            page_tracks = payload.get("musiclist") or []
+            if not payload and page == 0:
+                return {}
+            if not merged_payload and payload:
+                merged_payload = dict(payload)
+            elif payload:
+                for key, value in payload.items():
+                    if key == "musiclist":
+                        continue
+                    if merged_payload.get(key) in ("", None, [], {}) and value not in ("", None, [], {}):
+                        merged_payload[key] = value
+
+            songnum = payload.get("songnum") or merged_payload.get("songnum")
+            try:
+                total_expected = int(songnum or 0)
+            except (TypeError, ValueError):
+                total_expected = 0
+
+            added = 0
+            for track in page_tracks:
+                track_id = str(track.get("musicrid") or "")
+                dedupe_key = track_id or f"{track.get('name', '')}|{len(tracks)}"
+                if dedupe_key in seen_track_ids:
+                    continue
+                seen_track_ids.add(dedupe_key)
+                tracks.append(track)
+                added += 1
+
+            if not page_tracks or added == 0:
+                break
+            if total_expected and len(tracks) >= total_expected:
+                break
+            if len(page_tracks) < page_size:
+                break
+
+        if not tracks:
+            return {}
+        merged_payload["musiclist"] = tracks
+        if total_expected:
+            merged_payload["songnum"] = str(total_expected)
+        return merged_payload
+
+    def detailContent(self, ids):
+        album_id = str(ids[0] if isinstance(ids, list) and ids else ids).strip()
+        if not album_id:
+            return {"list": []}
+
+        payload = self._fetch_album_detail(album_id)
         tracks = payload.get("musiclist") or []
         if not tracks:
             return {"list": []}
