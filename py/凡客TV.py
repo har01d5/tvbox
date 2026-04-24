@@ -1,12 +1,8 @@
 # coding=utf-8
-import base64
 import json
 import re
 import sys
 from urllib.parse import quote, urljoin
-
-from Cryptodome.Cipher import AES
-from Cryptodome.Util.Padding import unpad
 
 from base.spider import Spider as BaseSpider
 
@@ -23,8 +19,6 @@ class Spider(BaseSpider):
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
         )
-        self._img_key = b"525202f9149e061d"
-        self._img_cache = {}
         self.classes = [
             {"type_id": "1", "type_name": "电影"},
             {"type_id": "2", "type_name": "剧集"},
@@ -60,26 +54,6 @@ class Spider(BaseSpider):
         if raw.startswith("//"):
             return "https:" + raw
         return urljoin(self.host + "/", raw)
-
-    def _decode_bnc_cover(self, url):
-        cover_url = self._abs_url(url)
-        if not cover_url.endswith(".bnc"):
-            return cover_url
-        if cover_url in self._img_cache:
-            return self._img_cache[cover_url]
-        try:
-            response = self.fetch(cover_url, headers=self._page_headers(self.host + "/"), timeout=10, verify=False)
-            if response.status_code != 200:
-                return cover_url
-            encrypted = getattr(response, "content", b"") or b""
-            if not encrypted:
-                return cover_url
-            plain = unpad(AES.new(self._img_key, AES.MODE_ECB).decrypt(encrypted), AES.block_size)
-            decoded = "data:image/png;base64," + base64.b64encode(plain).decode("ascii")
-            self._img_cache[cover_url] = decoded
-            return decoded
-        except Exception:
-            return cover_url
 
     def _page_headers(self, referer=""):
         headers = {"User-Agent": self.user_agent, "Referer": referer or self.host + "/"}
@@ -156,8 +130,6 @@ class Spider(BaseSpider):
                 )
             )
             pic = self._clean_text("".join(node.xpath(".//*[contains(@class,'lazy-load')][1]/@data-src")))
-            if not pic:
-                pic = self._clean_text("".join(node.xpath(".//*[contains(@class,'lazy-load')][1]/@src")))
             tags = [
                 self._clean_text("".join(tag.xpath(".//text()")))
                 for tag in node.xpath(".//*[contains(@class,'tag')]")
@@ -169,7 +141,7 @@ class Spider(BaseSpider):
                 {
                     "vod_id": vod_id,
                     "vod_name": title,
-                    "vod_pic": self._decode_bnc_cover(pic),
+                    "vod_pic": self._abs_url(pic),
                     "vod_remarks": " | ".join(tags),
                     "type_name": tags[0] if tags else "",
                 }
@@ -306,7 +278,7 @@ class Spider(BaseSpider):
                 {
                     "vod_id": state["movieId"] or vod_id,
                     "vod_name": title or vod_id,
-                    "vod_pic": self._decode_bnc_cover(pic),
+                    "vod_pic": self._abs_url(pic),
                     "vod_content": content,
                     "vod_remarks": " | ".join(remarks),
                     "vod_play_from": "$$$".join(name for name, _ in groups),

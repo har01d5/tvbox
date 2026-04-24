@@ -1,11 +1,7 @@
 import unittest
-from base64 import b64encode
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from unittest.mock import patch
-
-from Cryptodome.Cipher import AES
-from Cryptodome.Util.Padding import pad
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,49 +101,6 @@ class TestFKTVSpider(unittest.TestCase):
         )
         self.assertEqual(result["page"], 3)
         self.assertEqual(result["list"][0]["vod_id"], "xyz789")
-
-    @patch.object(Spider, "_request_html")
-    def test_category_content_uses_img_src_when_data_src_missing(self, mock_request_html):
-        mock_request_html.return_value = """
-        <div class="card-wrap">
-          <div class="meta-wrap">
-            <a class="normal-title" href="/movie/detail/src001" title="封面走 src">封面走 src</a>
-            <img class="lazy-load" src="/poster-src.jpg" />
-            <span class="tag">电影</span>
-          </div>
-        </div>
-        """
-        result = self.spider.categoryContent("1", "1", False, {})
-        self.assertEqual(result["list"][0]["vod_pic"], "https://fktv.me/poster-src.jpg")
-
-    @patch.object(Spider, "fetch")
-    @patch.object(Spider, "_request_html")
-    def test_category_content_decodes_bnc_cover_to_data_url(self, mock_request_html, mock_fetch):
-        mock_request_html.return_value = """
-        <div class="card-wrap">
-          <div class="meta-wrap">
-            <a class="normal-title" href="/movie/detail/bnc001" title="加密封面">加密封面</a>
-            <div class="lazy-load" data-src="https://img.example/cover.bnc"></div>
-            <span class="tag">电影</span>
-          </div>
-        </div>
-        """
-        png_bytes = (
-            b"\x89PNG\r\n\x1a\n"
-            b"\x00\x00\x00\rIHDR"
-            b"\x00\x00\x00\x01\x00\x00\x00\x01"
-            b"\x08\x06\x00\x00\x00"
-        )
-        key = b"525202f9149e061d"
-        encrypted = AES.new(key, AES.MODE_ECB).encrypt(pad(png_bytes, AES.block_size))
-        mock_fetch.return_value.status_code = 200
-        mock_fetch.return_value.content = encrypted
-
-        result = self.spider.categoryContent("1", "1", False, {})
-
-        expected_prefix = "data:image/png;base64,"
-        expected_body = b64encode(png_bytes).decode("ascii")
-        self.assertEqual(result["list"][0]["vod_pic"], expected_prefix + expected_body)
 
     @patch.object(Spider, "_request_html")
     def test_detail_content_extracts_state_and_builds_multiline_playlist(self, mock_request_html):
