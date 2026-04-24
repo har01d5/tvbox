@@ -261,12 +261,56 @@ class Spider(BaseSpider):
             return {"list": []}
         return {"list": [vod]}
 
+    def _extract_balanced_object(self, text, start_index):
+        raw = self._stringify(text)
+        if start_index < 0 or start_index >= len(raw) or raw[start_index] != "{":
+            return ""
+
+        depth = 0
+        in_string = False
+        quote_char = ""
+        escaped = False
+
+        for index in range(start_index, len(raw)):
+            char = raw[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote_char:
+                    in_string = False
+                continue
+
+            if char in ('"', "'"):
+                in_string = True
+                quote_char = char
+                continue
+
+            if char == "{":
+                depth += 1
+                continue
+
+            if char == "}":
+                depth -= 1
+                if depth == 0:
+                    return raw[start_index : index + 1]
+
+        return ""
+
     def _extract_player_data(self, html):
-        matched = re.search(r"var\s+player_aaaa\s*=\s*(\{[\s\S]*?\})", self._stringify(html), re.I)
+        text = self._stringify(html)
+        matched = re.search(r"player_aaaa\s*=", text, re.I)
         if not matched:
             return {}
+        object_start = text.find("{", matched.end())
+        if object_start < 0:
+            return {}
+        raw_object = self._extract_balanced_object(text, object_start)
+        if not raw_object:
+            return {}
         try:
-            return json.loads(matched.group(1))
+            return json.loads(raw_object)
         except Exception:
             return {}
 

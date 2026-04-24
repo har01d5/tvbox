@@ -229,6 +229,19 @@ class TestNSVodSpider(unittest.TestCase):
         self.assertEqual(result["header"]["Referer"], "https://nsvod.me/index.php/vod/play/id/70/sid/1/nid/1.html")
 
     @patch.object(Spider, "_request_html")
+    def test_player_content_supports_nested_player_aaaa_object(self, mock_request_html):
+        mock_request_html.return_value = """
+        <script type="text/javascript">
+        var player_aaaa={"flag":"play","encrypt":0,"vod_data":{"vod_name":"阿爸请你嘛嘛吼","vod_actor":"甲,乙","vod_class":"剧情"},"url":"https:\\/\\/vip.dytt-kan.com\\/20260423\\/13858_751d8d46\\/index.m3u8","from":"dyttm3u8","id":"22663","sid":1,"nid":1}
+        </script>
+        """
+        result = self.spider.playerContent("DY线路", "/index.php/vod/play/id/22663/sid/1/nid/1.html", {})
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["jx"], 0)
+        self.assertEqual(result["url"], "https://vip.dytt-kan.com/20260423/13858_751d8d46/index.m3u8")
+        self.assertEqual(result["header"]["Referer"], "https://nsvod.me/index.php/vod/play/id/22663/sid/1/nid/1.html")
+
+    @patch.object(Spider, "_request_html")
     def test_player_content_falls_back_to_inline_m3u8(self, mock_request_html):
         mock_request_html.return_value = '<script>var now="https://cdn.example/fallback.m3u8?token=1"</script>'
         result = self.spider.playerContent("线路A", "/index.php/vod/play/id/71/sid/1/nid/1.html", {})
