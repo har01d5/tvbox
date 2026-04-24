@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = SourceFileLoader("bbys_spider", str(ROOT / "步步影视.py")).load_module()
+MODULE = SourceFileLoader("bbys_spider", str(ROOT / "布布影视.py")).load_module()
 Spider = MODULE.Spider
 
 
@@ -153,7 +153,7 @@ class TestBuBuYingShiSpider(unittest.TestCase):
         self.assertIn("正片$线路二@1@/movie/main", data["vod_play_url"])
 
     @patch.object(Spider, "_request_json")
-    def test_detail_content_handles_array_payload_and_packs_play_urls(self, mock_request_json):
+    def test_detail_content_uses_vodplayer_from_codes_and_show_names(self, mock_request_json):
         mock_request_json.return_value = {
             "data": [
                 {
@@ -167,18 +167,19 @@ class TestBuBuYingShiSpider(unittest.TestCase):
                     "vod_director": "丙",
                     "vod_content": "<p>一段简介</p>",
                     "vod_class": "剧情",
-                    "vod_play_from": "线路一",
-                    "vod_play_url": "第1集$/play/1",
+                    "vod_play_from": "rose",
+                    "vod_play_url": "第1集$rose_token",
                 }
-            ]
+            ],
+            "vodplayer": [{"from": "rose", "show": "SE蓝光", "decode_status": "1"}],
         }
         result = self.spider.detailContent(["18"])
         detail = result["list"][0]
         self.assertEqual(detail["vod_id"], "18")
         self.assertEqual(detail["vod_content"], "一段简介")
         self.assertEqual(detail["type_name"], "剧情")
-        self.assertEqual(detail["vod_play_from"], "线路一(1)")
-        self.assertEqual(detail["vod_play_url"], "第1集$线路一@1@/play/1")
+        self.assertEqual(detail["vod_play_from"], "SE蓝光(1)")
+        self.assertEqual(detail["vod_play_url"], "第1集$rose@1@rose_token")
 
     def test_extract_decode_url_accepts_multiple_shapes(self):
         self.assertEqual(self.spider._extract_decode_url({"data": "https://a.example/m3u8"}), "https://a.example/m3u8")
@@ -198,6 +199,15 @@ class TestBuBuYingShiSpider(unittest.TestCase):
         self.assertEqual(result["parse"], 0)
         self.assertEqual(result["playUrl"], "")
         self.assertEqual(result["url"], "https://cdn.example/real.m3u8")
+
+    @patch.object(Spider, "_request_json")
+    def test_player_content_parses_non_binary_decode_status(self, mock_request_json):
+        mock_request_json.return_value = {"data": {"url": "https://cdn.example/jd4k.m3u8"}}
+        result = self.spider.playerContent("JD蓝光", "JD4K@2@JD-a8fa0064", {})
+        kwargs = mock_request_json.call_args.kwargs
+        self.assertEqual(kwargs["params"]["url"], "JD-a8fa0064")
+        self.assertEqual(kwargs["params"]["vodFrom"], "JD4K")
+        self.assertEqual(result["url"], "https://cdn.example/jd4k.m3u8")
 
     @patch.object(Spider, "_request_json")
     def test_player_content_sets_jx_for_major_video_sites(self, mock_request_json):
@@ -226,6 +236,18 @@ class TestBuBuYingShiSpider(unittest.TestCase):
         mock_request_json.return_value = {}
         result = self.spider.playerContent("线路一", "线路一@1@/play/404", {})
         self.assertEqual(result["url"], "/play/404")
+
+    @patch.object(Spider, "_request_json")
+    def test_player_content_marks_disabled_decode_line_as_unplayable(self, mock_request_json):
+        mock_request_json.return_value = {
+            "code": 0,
+            "msg": "线路暂时停用，请稍后再试",
+            "data": "JD-2eb205f0c280bdb5b93e14c25d5e72140",
+        }
+        result = self.spider.playerContent("JD蓝光", "JD4K@2@JD-2eb205f0c280bdb5b93e14c25d5e72140", {})
+        self.assertEqual(result["parse"], 1)
+        self.assertEqual(result["jx"], 0)
+        self.assertEqual(result["url"], "")
 
 
 if __name__ == "__main__":

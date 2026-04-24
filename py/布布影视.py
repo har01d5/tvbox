@@ -12,7 +12,7 @@ sys.path.append("..")
 
 class Spider(BaseSpider):
     def __init__(self):
-        self.name = "步步影视"
+        self.name = "布布影视"
         self.host = "https://bbys.app"
         self.pkg = "com.sunshine.tv"
         self.ver = "4"
@@ -249,7 +249,11 @@ class Spider(BaseSpider):
             detail = detail[0] if detail else None
         if not detail:
             return {"list": []}
-        play_data = self._build_play_data(detail.get("vod_play_from", ""), detail.get("vod_play_url", ""))
+        play_data = self._build_play_data(
+            detail.get("vod_play_from", ""),
+            detail.get("vod_play_url", ""),
+            payload.get("vodplayer") or [],
+        )
         return {
             "list": [
                 {
@@ -290,10 +294,10 @@ class Spider(BaseSpider):
         play_from = ""
         play_url = raw
         need_decode = False
-        matched = re.match(r"^([^@]+)@([01])@([\s\S]+)$", raw)
+        matched = re.match(r"^([^@]+)@([^@]+)@([\s\S]+)$", raw)
         if matched:
             play_from = matched.group(1)
-            need_decode = matched.group(2) == "1"
+            need_decode = matched.group(2).strip() not in ("", "0")
             play_url = matched.group(3)
         elif not raw.startswith(("http://", "https://")):
             need_decode = True
@@ -306,6 +310,14 @@ class Spider(BaseSpider):
                 params={"url": play_url, "vodFrom": play_from},
             )
             decoded = self._extract_decode_url(payload)
+            if self._is_disabled_decode_result(payload, play_url, decoded):
+                return {
+                    "parse": 1,
+                    "playUrl": "",
+                    "url": "",
+                    "jx": 0,
+                    "header": {"User-Agent": "okhttp/4.12.0"},
+                }
             if decoded:
                 final_url = decoded
 
@@ -339,9 +351,10 @@ class Spider(BaseSpider):
             return str(value).split(sep)
         return []
 
-    def _build_play_data(self, vod_play_from, vod_play_url):
+    def _build_play_data(self, vod_play_from, vod_play_url, vodplayer=None):
         from_list = self._safe_split(vod_play_from, "$$$")
         url_groups = self._safe_split(vod_play_url, "$$$")
+        player_meta = self._build_player_meta(vodplayer)
         final_from = []
         final_url = []
         for index in range(max(len(from_list), len(url_groups))):
@@ -349,6 +362,8 @@ class Spider(BaseSpider):
             group = (url_groups[index] if index < len(url_groups) else "").strip()
             if not group:
                 continue
+            meta = player_meta.get(raw_from) or {}
+            display_from = self._stringify(meta.get("show")).strip() or raw_from
             episodes = []
             for item in [part.strip() for part in group.split("#") if part.strip()]:
                 if "$" in item:
@@ -358,11 +373,38 @@ class Spider(BaseSpider):
                 title = title.strip() or "播放"
                 raw_url = raw_url.strip()
                 if raw_url:
-                    episodes.append(f"{title}${raw_from}@1@{raw_url}")
+                    decode_status = self._stringify(meta.get("decode_status")).strip()
+                    if not decode_status:
+                        decode_status = "0" if raw_url.startswith(("http://", "https://")) else "1"
+                    episodes.append(f"{title}${raw_from}@{decode_status}@{raw_url}")
             if episodes:
-                final_from.append(f"{raw_from}({len(episodes)})")
+                final_from.append(f"{display_from}({len(episodes)})")
                 final_url.append("#".join(episodes))
         return {"vod_play_from": "$$$".join(final_from), "vod_play_url": "$$$".join(final_url)}
+
+    def _build_player_meta(self, vodplayer):
+        meta = {}
+        for item in vodplayer or []:
+            if not isinstance(item, dict):
+                continue
+            source_from = self._stringify(item.get("from")).strip()
+            if not source_from:
+                continue
+            meta[source_from] = {
+                "show": self._stringify(item.get("show")).strip(),
+                "decode_status": self._stringify(item.get("decode_status")).strip(),
+            }
+        return meta
+
+    def _is_disabled_decode_result(self, payload, play_url, decoded):
+        if not isinstance(payload, dict):
+            return False
+        message = self._stringify(payload.get("msg")).strip()
+        if "停用" in message or "稍后再试" in message:
+            return True
+        if "解码失败" not in message:
+            return False
+        return bool(decoded) and decoded == play_url and not decoded.startswith(("http://", "https://", "/"))
 
     def _generate_years(self, type_name):
         years = [{"n": "全部", "v": ""}]
