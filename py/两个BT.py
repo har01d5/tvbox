@@ -90,6 +90,14 @@ class Spider(BaseSpider):
         media_url = self._extract_media_url(html)
         if media_url:
             return self._build_player_result(media_url, play_page_url)
+
+        iframe_url = self._extract_iframe_url(html)
+        if iframe_url:
+            iframe_html = self._request_html(iframe_url, referer=play_page_url)
+            iframe_media_url = self._extract_media_url(iframe_html)
+            if iframe_media_url:
+                return self._build_player_result(iframe_media_url, iframe_url)
+
         return self._build_parse_result(play_page_url, play_page_url)
 
     def _request_html(self, url, referer=None):
@@ -291,6 +299,10 @@ class Spider(BaseSpider):
                 "Origin": self.host,
             },
         }
+
+    def _extract_iframe_url(self, html):
+        matched = re.search(r'<iframe[^>]+src=["\']([^"\']+)["\']', str(html or ""), re.I)
+        return self._abs_url(matched.group(1)) if matched else ""
 
     def _abs_url(self, value):
         raw = str(value or "").strip()

@@ -191,6 +191,29 @@ class TestLiangGeBTSpider(unittest.TestCase):
         self.assertEqual(result["url"], "https://media.example/final.mp4")
         self.assertEqual(result["header"]["Referer"], "https://www.bttwoo.com/v_play/play-100.html")
 
+    @patch.object(Spider, "_request_html")
+    def test_player_content_extracts_media_from_iframe(self, mock_request_html):
+        mock_request_html.side_effect = [
+            '<iframe src="/embed/demo.html"></iframe>',
+            '<script>var source = "https://media.example/iframe.m3u8";</script>',
+        ]
+        play_id = self.spider._encode_play_id("play-200", "900", "第2集")
+        result = self.spider.playerContent("两个BT", play_id, {})
+        self.assertEqual(mock_request_html.call_args_list[0].args[0], "https://www.bttwoo.com/v_play/play-200.html")
+        self.assertEqual(mock_request_html.call_args_list[1].args[0], "https://www.bttwoo.com/embed/demo.html")
+        self.assertEqual(result["parse"], 0)
+        self.assertEqual(result["url"], "https://media.example/iframe.m3u8")
+
+    @patch.object(Spider, "_request_html")
+    def test_player_content_falls_back_to_parse_when_no_media_found(self, mock_request_html):
+        mock_request_html.return_value = "<html><body>empty</body></html>"
+        play_id = self.spider._encode_play_id("play-300", "900", "第3集")
+        result = self.spider.playerContent("两个BT", play_id, {})
+        self.assertEqual(result["parse"], 1)
+        self.assertEqual(result["jx"], 1)
+        self.assertEqual(result["url"], "https://www.bttwoo.com/v_play/play-300.html")
+        self.assertEqual(result["header"]["Referer"], "https://www.bttwoo.com/v_play/play-300.html")
+
 
 if __name__ == "__main__":
     unittest.main()
