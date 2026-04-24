@@ -84,6 +84,17 @@ class Spider(BaseSpider):
             raw = raw[: -len(strip_suffix)]
         return json.loads(raw) if raw else {}
 
+    def _join_text_list(self, values):
+        parts = []
+        for item in values or []:
+            if isinstance(item, (list, tuple)):
+                text = next((str(value).strip() for value in item if str(value).strip()), "")
+            else:
+                text = str(item).strip()
+            if text:
+                parts.append(text)
+        return ",".join(parts)
+
     def _get_batch_video_info(self, vids):
         results = []
         for start in range(0, len(vids or []), 30):
@@ -161,8 +172,8 @@ class Spider(BaseSpider):
             vod = {
                 "vod_id": raw_id,
                 "vod_name": ((payload.get("c") or {}).get("title") or ""),
-                "type_name": ",".join(payload.get("typ", []) or []),
-                "vod_actor": ",".join(payload.get("nam", []) or []),
+                "type_name": self._join_text_list(payload.get("typ", []) or []),
+                "vod_actor": self._join_text_list(payload.get("nam", []) or []),
                 "vod_year": ((payload.get("c") or {}).get("year") or ""),
                 "vod_content": ((payload.get("c") or {}).get("description") or ""),
                 "vod_remarks": payload.get("rec", "") or "",

@@ -156,6 +156,31 @@ class TestTencentSpider(unittest.TestCase):
             "第1集$https://v.qq.com/x/cover/cid001/vid001.html#终极预告$https://v.qq.com/x/cover/cid001/vid002.html",
         )
 
+    @patch.object(Spider, "_get_batch_video_info")
+    @patch.object(Spider, "fetch")
+    def test_detail_content_handles_nested_typ_and_nam_lists(self, mock_fetch, mock_get_batch_video_info):
+        mock_fetch.return_value = SimpleNamespace(
+            json=lambda: {
+                "c": {
+                    "title": "示例影片",
+                    "year": "2024",
+                    "description": "剧情简介",
+                    "pic": "/poster.jpg",
+                    "video_ids": ["vid001"],
+                },
+                "typ": [["动漫", "1"], ["冒险", "2"]],
+                "nam": [["演员甲", "a1"], ["演员乙", "a2"]],
+                "rec": "更新中",
+            }
+        )
+        mock_get_batch_video_info.return_value = [{"vid": "vid001", "title": "1", "type": "正片"}]
+
+        result = self.spider.detailContent(["cid001"])
+        vod = result["list"][0]
+
+        self.assertEqual(vod["type_name"], "动漫,冒险")
+        self.assertEqual(vod["vod_actor"], "演员甲,演员乙")
+
     @patch.object(Spider, "post")
     def test_search_content_collects_normal_and_area_results(self, mock_post):
         mock_post.return_value = SimpleNamespace(
