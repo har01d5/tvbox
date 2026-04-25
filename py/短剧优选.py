@@ -36,6 +36,21 @@ XIFAN_FEEDS = (
     "JS3QY6ER0P2cQSxAE_OGKSMIWNAMsYUZ3mJTnEpf-Rc"
 )
 
+XINGXING_HOST = "http://read.api.duodutek.com"
+XINGXING_UA = (
+    "Mozilla/5.0 (Windows NT 6.1; WOW64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/50.0.2661.87 Safari/537.36"
+)
+XINGXING_COMMON_PARAMS = {
+    "productId": "2a8c14d1-72e7-498b-af23-381028eb47c0",
+    "vestId": "2be070e0-c824-4d0e-a67a-8f688890cadb",
+    "channel": "oppo19",
+    "osType": "android",
+    "version": "20",
+    "token": "202509271001001446030204698626",
+}
+
 
 class Spider(BaseSpider):
     def __init__(self):
@@ -59,30 +74,22 @@ class Spider(BaseSpider):
                 "search": "/v3/search",
                 "login": "https://u.shytkjgs.com/user/v1/account/login",
             },
+            "星星": {
+                "host": XINGXING_HOST,
+                "url1": "/novel-api/app/pageModel/getResourceById",
+                "url2": "/novel-api/basedata/book/getChapterList",
+            },
             "西饭": {
                 "host": "https://xifan-api-cn.youlishipin.com",
                 "url1": "/xifan/drama/portalPage",
                 "url2": "/xifan/drama/getDuanjuInfo",
                 "search": "/xifan/search/getSearchList",
             },
-            "围观": {
-                "host": "https://api.drama.9ddm.com",
-                "url1": "/drama/home/shortVideoTags",
-                "url2": "/drama/home/shortVideoDetail",
-                "search": "/drama/home/search",
-            },
-            "剧王": {
-                "host": "https://djw1.com",
-                "url1": "/all/",
-                "search": "/search",
-            },
-            "七星": {
-                "host": "https://app.whjzjx.cn",
-                "url1": "/v1/theater/home_page?theater_class_id",
-                "url2": "/v2/theater_parent/detail",
-                "search": "/v3/search",
-                "login": "https://u.shytkjgs.com/user/v1/account/login",
-            },
+            # "锦鲤": {
+            #     "host": "https://api.jinlidj.com",
+            #     "search": "/api/search",
+            #     "url2": "/api/detail",
+            # },
             "红果": {
                 "host": "https://api-v2.cenguigui.cn",
                 "url1": "/api/duanju/api.php?classname",
@@ -96,10 +103,9 @@ class Spider(BaseSpider):
         self.classes = [
             {"type_id": "七猫", "type_name": "七猫短剧"},
             {"type_id": "星芽", "type_name": "星芽短剧"},
+            {"type_id": "星星", "type_name": "星星短剧"},
             {"type_id": "西饭", "type_name": "西饭短剧"},
-            # {"type_id": "围观", "type_name": "围观短剧"},
-            # {"type_id": "剧王", "type_name": "剧王短剧"},
-            {"type_id": "七星", "type_name": "七星短剧"},
+            {"type_id": "锦鲤", "type_name": "锦鲤短剧"},
             {"type_id": "红果", "type_name": "红果短剧"},
             {"type_id": "短剧网", "type_name": "短剧网"},
         ]
@@ -125,44 +131,20 @@ class Spider(BaseSpider):
                 ("剧场", "1"), ("热播", "2"), ("新剧", "3"),
                 ("阳光剧场", "5"), ("星选好剧", "7"), ("会员专享", "8"),
             ])],
+            "星星": [self._filter_area("分类", [
+                ("甜宠", "1287"), ("逆袭", "1288"), ("热血", "1289"),
+                ("现代", "1290"), ("古代", "1291"),
+            ])],
             "西饭": [self._filter_area("分类", [
                 ("全部", ""), ("都市", "68@都市"), ("青春", "68@青春"),
                 ("现代言情", "81@现代言情"), ("豪门", "81@豪门"),
                 ("大女主", "80@大女主"), ("逆袭", "79@逆袭"),
                 ("打脸虐渣", "79@打脸虐渣"), ("穿越", "81@穿越"),
             ])],
-            "围观": [self._filter_area("分类", [
-                ("都市", "都市"), ("逆袭", "逆袭"), ("家庭", "家庭"),
-                ("复仇", "复仇"), ("古装", "古装"), ("甜宠", "甜宠"),
-                ("悬疑", "悬疑"), ("爱情", "爱情"), ("虐恋", "虐恋"),
-                ("动漫", "动漫"), ("重生", "重生"), ("奇幻", "奇幻"),
-                ("总裁", "总裁"), ("穿越", "穿越"), ("萌宝", "萌宝"),
-                ("乡村", "乡村"), ("修仙", "修仙"), ("异能", "异能"),
-                ("战神", "战神"), ("职场", "职场"), ("年代", "年代"),
-                ("正能量", "正能量"), ("神豪", "神豪"), ("喜剧", "喜剧"),
-                ("青春", "青春"), ("宫廷", "宫廷"), ("武侠", "武侠"),
-                ("神医", "神医"), ("科幻", "科幻"), ("赘婿", "赘婿"),
-            ])],
-            "剧王": [self._filter_area("分类", [
-                ("逆袭", "/tag/逆袭/"), ("霸总", "/tag/霸总/"),
-                ("战神", "/tag/战神/"), ("穿越", "/tag/穿越/"),
-                ("重生", "/tag/重生/"), ("赘婿", "/tag/赘婿/"),
-                ("甜宠", "/tag/甜宠/"), ("虐恋", "/tag/虐恋/"),
-                ("古装", "/tag/古装/"), ("都市", "/tag/都市/"),
-                ("神医", "/tag/神医/"), ("玄幻", "/tag/玄幻/"),
-                ("修仙", "/tag/修仙/"), ("女频", "/tag/女频/"),
-                ("男频", "/tag/男频/"), ("情感", "/tag/情感/"),
-                ("复仇", "/tag/复仇/"), ("现代", "/tag/现代/"),
-                ("萌宝", "/tag/萌宝/"), ("虐渣", "/tag/虐渣/"),
-                ("系统", "/tag/系统/"), ("打脸", "/tag/打脸/"),
-                ("奇幻", "/tag/奇幻/"), ("家庭", "/tag/家庭/"),
-                ("亲情", "/tag/亲情/"), ("言情", "/tag/言情/"),
-                ("年代", "/tag/年代/"), ("悬疑", "/tag/悬疑/"),
-                ("豪门", "/tag/豪门/"),
-            ])],
-            "七星": [self._filter_area("分类", [
-                ("七星剧场", "1"), ("七星新剧", "3"), ("七星热播", "2"),
-                ("七星星选", "7"), ("七星阳光", "5"),
+            "锦鲤": [self._filter_area("分类", [
+                ("全部", ""), ("推荐", "1"), ("霸总", "2"), ("战神", "3"),
+                ("神医", "4"), ("虐恋", "5"), ("萌宝", "6"), ("逆袭", "7"),
+                ("穿越", "8"), ("古装", "9"), ("重生", "10"),
             ])],
             "红果": [self._filter_area("分类", [
                 ("逆袭", "逆袭"), ("霸总", "霸总"), ("现代言情", "现代言情"),
@@ -196,9 +178,8 @@ class Spider(BaseSpider):
             ])],
         }
         self.filter_defaults = {
-            "七猫": {"area": "0"}, "星芽": {"area": "1"}, "西饭": {"area": ""},
-            "围观": {"area": "都市"}, "剧王": {"area": "/tag/逆袭/"},
-            "七星": {"area": "1"}, "红果": {"area": "逆袭"},
+            "七猫": {"area": "0"}, "星芽": {"area": "1"}, "星星": {"area": "1287"},
+            "西饭": {"area": ""}, "锦鲤": {"area": ""}, "红果": {"area": "逆袭"},
             "短剧网": {"area": "1"},
         }
 
@@ -274,14 +255,10 @@ class Spider(BaseSpider):
         if "红果" in flag:
             res = self._get_json("https://api-v2.cenguigui.cn/api/duanju/api.php?video_id=" + id)
             return {"parse": 0, "jx": 0, "url": res.get("url")}
-        if "星芽" in flag or "七猫" in flag or "西饭" in flag:
+        if "锦鲤" in flag:
+            return self._play_jinli(id)
+        if "星芽" in flag or "星星" in flag or "七猫" in flag or "西饭" in flag:
             return {"parse": 0, "jx": 0, "url": id}
-        if "七星" in flag:
-            return {"parse": 0, "jx": 0, "url": id}
-        if "围观" in flag:
-            return self._play_weiguan(id)
-        if "剧王" in flag:
-            return self._play_juwang(id)
         if "短剧网" in flag:
             return {"parse": 0, "jx": 0, "url": id}
         return {"parse": 0, "jx": 0, "url": id}
@@ -397,6 +374,19 @@ class Spider(BaseSpider):
             p.update(extra)
         return p
 
+    def _xingxing_headers(self):
+        return {"User-Agent": XINGXING_UA}
+
+    def _xingxing_url(self, path, params=None):
+        query = urlencode(dict(XINGXING_COMMON_PARAMS, **(params or {})))
+        return f"{XINGXING_HOST}{path}?{query}"
+
+    def _normalize_xingxing_play_url(self, value):
+        play_url = self._s(value).strip()
+        if play_url.startswith("http://img.novel.wsljf.xyz/"):
+            return "https://" + play_url[len("http://"):]
+        return play_url
+
     # --- category per platform ---
 
     def _fetch_category(self, tid, page, area):
@@ -406,10 +396,9 @@ class Spider(BaseSpider):
         handler = {
             "七猫": self._cat_qimao,
             "星芽": self._cat_xingya,
+            "星星": self._cat_xingxing,
             "西饭": self._cat_xifan,
-            "围观": self._cat_weiguan,
-            "剧王": self._cat_juwang,
-            "七星": self._cat_qixing,
+            "锦鲤": self._cat_jinli,
             "红果": self._cat_tianquan,
             "短剧网": self._cat_duanjuwang,
         }.get(tid)
@@ -447,6 +436,25 @@ class Spider(BaseSpider):
             })
         return items
 
+    def _cat_xingxing(self, plat, page, area):
+        url = self._xingxing_url(
+            plat["url1"],
+            {"resourceId": area, "pageNum": str(page), "pageSize": "10"},
+        )
+        res = self._get_json(url, headers=self._xingxing_headers())
+        items = []
+        for it in (res.get("data") or {}).get("datalist") or []:
+            book_id = self._s(it.get("id")).strip()
+            name = self._s(it.get("name")).strip()
+            intro = self._s(it.get("introduction")).strip()
+            items.append({
+                "vod_id": f"星星@{book_id}@@{name}@@{intro}",
+                "vod_name": name,
+                "vod_pic": self._s(it.get("icon")).strip(),
+                "vod_remarks": f"{self._s(it.get('heat')).strip()}万播放" if self._s(it.get("heat")).strip() else "",
+            })
+        return items
+
     def _cat_xifan(self, plat, page, area):
         type_id, type_name = (area.split("@", 1) + [""])[:2]
         params = self._xifan_params({
@@ -467,6 +475,19 @@ class Spider(BaseSpider):
                     "vod_pic": self._s(dj.get("coverImageUrl")),
                     "vod_remarks": f"{dj.get('total', 0)}集",
                 })
+        return items
+
+    def _cat_jinli(self, plat, page, area):
+        body = {"page": page, "limit": 24, "type_id": area, "year": "", "keyword": ""}
+        res = self._post_json(f"{plat['host']}{plat['search']}", body=body)
+        items = []
+        for it in (res.get("data") or {}).get("list") or []:
+            items.append({
+                "vod_id": f"锦鲤@{it.get('vod_id', '')}",
+                "vod_name": self._s(it.get("vod_name")),
+                "vod_pic": self._s(it.get("vod_pic")),
+                "vod_remarks": f"{it.get('vod_total', 0)}集",
+            })
         return items
 
     def _cat_weiguan(self, plat, page, area):
@@ -592,10 +613,9 @@ class Spider(BaseSpider):
         handler = {
             "七猫": self._detail_qimao,
             "星芽": self._detail_xingya,
+            "星星": self._detail_xingxing,
             "西饭": self._detail_xifan,
-            "围观": self._detail_weiguan,
-            "剧王": self._detail_juwang,
-            "七星": self._detail_qixing,
+            "锦鲤": self._detail_jinli,
             "红果": self._detail_tianquan,
             "短剧网": self._detail_duanjuwang,
         }.get(platform)
@@ -641,6 +661,32 @@ class Spider(BaseSpider):
             "vod_play_url": play_urls,
         }
 
+    def _detail_xingxing(self, plat, detail_id, raw_id):
+        book_id, name, intro = (detail_id.split("@@", 2) + ["", ""])[:3]
+        url = self._xingxing_url(plat["url2"], {"bookId": book_id})
+        res = self._get_json(url, headers=self._xingxing_headers())
+        episodes = []
+        for index, chapter in enumerate(res.get("data") or [], start=1):
+            chapter_name = self._s(chapter.get("chapterName")).strip() or f"第{index}集"
+            play_url = ""
+            for play_group in chapter.get("shortPlayList") or []:
+                for play in play_group.get("chapterShortPlayVoList") or []:
+                    play_url = self._normalize_xingxing_play_url(play.get("shortPlayUrl"))
+                    if play_url:
+                        break
+                if play_url:
+                    break
+            if play_url:
+                episodes.append(f"{chapter_name}${play_url}")
+        return {
+            "vod_id": raw_id,
+            "vod_name": name,
+            "vod_content": intro,
+            "vod_remarks": f"共{len(episodes)}集" if episodes else "",
+            "vod_play_from": "星星短剧",
+            "vod_play_url": "#".join(episodes),
+        }
+
     def _detail_xifan(self, plat, detail_id, raw_id):
         duanju_id, source = detail_id.split("#", 1) if "#" in detail_id else (detail_id, "")
         params = self._xifan_params({
@@ -665,6 +711,23 @@ class Spider(BaseSpider):
             "vod_remarks": remark,
             "vod_play_from": "西饭短剧",
             "vod_play_url": play_urls or "暂无播放地址$0",
+        }
+
+    def _detail_jinli(self, plat, detail_id, raw_id):
+        url = f"{plat['host']}{plat['url2']}/{detail_id}"
+        res = self._get_json(url)
+        data = res.get("data") or {}
+        player = data.get("player") or {}
+        play_urls = "#".join(f"{name}${url}" for name, url in player.items())
+        return {
+            "vod_id": raw_id,
+            "vod_name": self._s(data.get("vod_name")),
+            "vod_pic": self._s(data.get("vod_pic")),
+            "vod_remarks": self._s(data.get("vod_remarks")),
+            "vod_content": self._s(data.get("vod_blurb")),
+            "type_name": self._s(data.get("vod_class")),
+            "vod_play_from": "锦鲤短剧",
+            "vod_play_url": play_urls,
         }
 
     def _detail_weiguan(self, plat, detail_id, raw_id):
@@ -862,10 +925,9 @@ class Spider(BaseSpider):
         handler = {
             "七猫": self._search_qimao,
             "星芽": self._search_xingya,
+            "星星": self._search_xingxing,
             "西饭": self._search_xifan,
-            "围观": self._search_weiguan,
-            "剧王": self._search_juwang,
-            "七星": self._search_qixing,
+            "锦鲤": self._search_jinli,
             "红果": self._search_tianquan,
             "短剧网": self._search_duanjuwang,
         }.get(platform_id)
@@ -902,6 +964,9 @@ class Spider(BaseSpider):
             })
         return items
 
+    def _search_xingxing(self, plat, keyword, page):
+        return []
+
     def _search_xifan(self, plat, keyword, page):
         params = self._xifan_params({
             "reqType": "search",
@@ -918,6 +983,19 @@ class Spider(BaseSpider):
                 "vod_name": self._s(dj.get("title")),
                 "vod_pic": self._s(dj.get("coverImageUrl")),
                 "vod_remarks": f"西饭短剧 | {dj.get('total', 0)}集",
+            })
+        return items
+
+    def _search_jinli(self, plat, keyword, page):
+        body = {"page": page, "limit": 30, "type_id": "", "year": "", "keyword": keyword}
+        res = self._post_json(f"{plat['host']}{plat['search']}", body=body)
+        items = []
+        for it in (res.get("data") or {}).get("list") or []:
+            items.append({
+                "vod_id": f"锦鲤@{it.get('vod_id', '')}",
+                "vod_name": self._s(it.get("vod_name")),
+                "vod_pic": self._s(it.get("vod_pic")),
+                "vod_remarks": f"锦鲤短剧 | {it.get('vod_total', 0)}集",
             })
         return items
 
@@ -1056,3 +1134,21 @@ class Spider(BaseSpider):
                 ),
             },
         }
+
+    def _play_jinli(self, play_id):
+        html_text = self._get_text(play_id, headers={"referer": "https://www.jinlidj.com/"})
+        trimmed = html_text.strip()
+        if trimmed[:1] in ("{", "["):
+            try:
+                data = json.loads(trimmed)
+                video_url = data.get("url") or (data.get("data") or {}).get("url") or ""
+                if video_url:
+                    return {"parse": 0, "jx": 0, "url": video_url}
+            except (TypeError, ValueError):
+                pass
+        match = re.search(r'https?://[^\'"\\s]+\\.(?:m3u8|mp4)(?:\\?[^\'"\\s]*)?', html_text, re.I)
+        if match:
+            return {"parse": 0, "jx": 0, "url": match.group(0)}
+        match = re.search(r'url\\s*:\\s*[\'"]([^\'"]+)[\'"]', html_text)
+        video_url = match.group(1) if match else play_id
+        return {"parse": 0, "jx": 0, "url": video_url}
