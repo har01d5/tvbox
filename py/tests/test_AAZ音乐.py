@@ -60,6 +60,18 @@ MV_HTML = """
 </body></html>
 """
 
+SEARCH_HTML = """
+<html><body>
+  <ul>
+    <li><div class="name"><a href="/m/2001.html" title="夜曲">夜曲</a></div></li>
+    <li><div class="name"><a href="/s/jay" title="周杰伦">周杰伦</a></div></li>
+    <li><div class="name"><a href="/p/jaybest" title="周董精选">周董精选</a></div></li>
+    <li><div class="name"><a href="/a/fantasy" title="范特西">范特西</a></div></li>
+    <li><div class="name"><a href="/v/nocturnemv" title="夜曲MV">夜曲MV</a></div></li>
+  </ul>
+</body></html>
+"""
+
 
 class TestAAZMusicSpider(unittest.TestCase):
     def setUp(self):
@@ -105,6 +117,21 @@ class TestAAZMusicSpider(unittest.TestCase):
     def test_category_content_returns_empty_for_unknown_type(self):
         self.assertEqual(
             self.spider.categoryContent("bad", "1", False, {}),
+            {"page": 1, "limit": 0, "total": 0, "list": []},
+        )
+
+    @patch.object(Spider, "fetch")
+    def test_search_content_maps_mixed_result_types(self, mock_fetch):
+        mock_fetch.return_value = SimpleNamespace(status_code=200, text=SEARCH_HTML)
+        result = self.spider.searchContent("周杰伦", False, "1")
+        self.assertEqual(
+            [item["vod_id"] for item in result["list"]],
+            ["song:2001", "singer:jay", "playlist:jaybest", "album:fantasy", "mv:nocturnemv"],
+        )
+
+    def test_search_content_returns_empty_for_blank_keyword(self):
+        self.assertEqual(
+            self.spider.searchContent("", False, "1"),
             {"page": 1, "limit": 0, "total": 0, "list": []},
         )
 

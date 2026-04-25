@@ -1,7 +1,7 @@
 # coding=utf-8
 import re
 import sys
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from base.spider import Spider as BaseSpider
 
@@ -119,6 +119,26 @@ class Spider(BaseSpider):
             )
         return items
 
+    def _parse_search_cards(self, html):
+        root = self._load_html(html)
+        items = []
+        seen = set()
+        for node in root.xpath("//li"):
+            href = "".join(node.xpath(".//div[contains(@class,'name')]//a[1]/@href")).strip()
+            vod_id = self._encode_vod_id(href)
+            if not vod_id or vod_id in seen:
+                continue
+            seen.add(vod_id)
+            items.append(
+                {
+                    "vod_id": vod_id,
+                    "vod_name": self._clean_text("".join(node.xpath(".//div[contains(@class,'name')]//a[1]/@title"))),
+                    "vod_pic": self._build_url("".join(node.xpath(".//img[1]/@src"))),
+                    "vod_remarks": "",
+                }
+            )
+        return items
+
     def homeContent(self, filter):
         items = self._parse_song_cards(self._fetch_html(self.category_paths["new"]))
         return {"class": list(self.classes), "list": items}
@@ -140,4 +160,12 @@ class Spider(BaseSpider):
             items = self._parse_folder_cards(html, "album")
         else:
             items = self._parse_folder_cards(html, "mv")
+        return {"page": int(pg), "limit": len(items), "total": len(items), "list": items}
+
+    def searchContent(self, key, quick, pg="1"):
+        keyword = self._clean_text(key)
+        if not keyword:
+            return self._empty_result(1)
+        html = self._fetch_html("/so/%s.html" % quote(keyword))
+        items = self._parse_search_cards(html)
         return {"page": int(pg), "limit": len(items), "total": len(items), "list": items}
