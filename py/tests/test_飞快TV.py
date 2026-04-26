@@ -76,3 +76,43 @@ class TestFeikuaiSpider(unittest.TestCase):
             "https://feikuai.tv/label/search_ajax.html?wd=%E7%B9%81%E8%8A%B1&by=time&order=desc&page=2",
         )
         self.assertEqual(result["list"][0]["vod_id"], "/voddetail/67890.html")
+
+    @patch.object(Spider, "_request_html")
+    def test_detail_content_merges_online_and_pan_groups(self, mock_request_html):
+        mock_request_html.return_value = """
+        <h1>示例影片</h1>
+        <div class="module-item-pic"><img data-original="/detail.jpg" /></div>
+        <div class="module-info-introduction-content">这里是简介</div>
+        <div class="module-tab-items-box">
+          <div class="module-tab-item"><span>线路A</span></div>
+          <div class="module-tab-item"><span>线路B</span></div>
+        </div>
+        <div class="module-list tab-list">
+          <a class="module-play-list-link" href="/vodplay/1-1-1.html">第1集</a>
+          <a class="module-play-list-link" href="/vodplay/1-1-2.html">第2集</a>
+        </div>
+        <div class="module-list tab-list">
+          <a class="module-play-list-link" href="/vodplay/1-2-1.html">第1集</a>
+        </div>
+        <div class="module-list">
+          <div class="tab-content">
+            <h4>夸克资源@分享一</h4>
+            <p>https://pan.quark.cn/s/demo1</p>
+          </div>
+          <div class="tab-content">
+            <h4>百度合集@分享二</h4>
+            <p>https://pan.baidu.com/s/demo2</p>
+          </div>
+        </div>
+        """
+        result = self.spider.detailContent(["/voddetail/1.html"])
+        vod = result["list"][0]
+        self.assertEqual(vod["vod_id"], "/voddetail/1.html")
+        self.assertEqual(vod["vod_name"], "示例影片")
+        self.assertEqual(vod["vod_pic"], "https://feikuai.tv/detail.jpg")
+        self.assertEqual(vod["vod_content"], "这里是简介")
+        self.assertEqual(vod["vod_play_from"], "线路A$$$线路B$$$quark$$$baidu")
+        self.assertEqual(
+            vod["vod_play_url"],
+            "第1集$/vodplay/1-1-1.html#第2集$/vodplay/1-1-2.html$$$第1集$/vodplay/1-2-1.html$$$夸克资源$https://pan.quark.cn/s/demo1$$$百度合集$https://pan.baidu.com/s/demo2",
+        )

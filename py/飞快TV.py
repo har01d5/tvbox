@@ -119,6 +119,21 @@ class Spider(BaseSpider):
                 )
         return items
 
+    def _detect_pan_type(self, url):
+        value = str(url or "").strip()
+        if "pan.quark.cn" in value:
+            return "quark"
+        if "drive.uc.cn" in value:
+            return "uc"
+        if "alipan.com" in value or "aliyundrive.com" in value:
+            return "aliyun"
+        if "pan.baidu.com" in value:
+            return "baidu"
+        return "pan"
+
+    def _join_group_urls(self, groups):
+        return "$$$".join("#".join(group) for group in groups if group)
+
     def categoryContent(self, tid, pg, filter, extend):
         page = max(1, int(pg))
         url = self.host + f"/vodshow/{tid}--------{page}---.html"
@@ -133,3 +148,68 @@ class Spider(BaseSpider):
         url = self.host + "/label/search_ajax.html?wd=" + quote(keyword) + f"&by=time&order=desc&page={page}"
         items = self._parse_search_cards(self._request_html(url))
         return {"page": page, "limit": len(items), "total": len(items), "list": items}
+
+    def detailContent(self, ids):
+        vod_id = str(ids[0] if isinstance(ids, list) and ids else ids or "").strip()
+        if not vod_id:
+            return {"list": []}
+        html = self._request_html(self.host + vod_id)
+        root = self.html(html or "")
+        if root is None:
+            return {"list": []}
+
+        title = self._clean_text("".join(root.xpath("//h1[1]//text()")))
+        pic = self._clean_text(
+            "".join(root.xpath("//*[contains(@class,'module-item-pic')]//img[1]/@data-original"))
+        )
+        content = self._clean_text(
+            "".join(root.xpath("//*[contains(@class,'module-info-introduction-content')][1]//text()"))
+        )
+
+        play_from = []
+        play_urls = []
+        online_names = [
+            self._clean_text("".join(node.xpath(".//text()")))
+            for node in root.xpath(
+                "//div[contains(@class,'module-tab-items-box')]/*[contains(@class,'module-tab-item')][not(@onclick)]"
+            )
+        ]
+        online_lists = root.xpath(
+            "//div[contains(@class,'module-list') and contains(@class,'tab-list')][not(contains(@class,'module-downlist'))]"
+        )
+        for index, node in enumerate(online_lists):
+            episodes = []
+            for item in node.xpath(".//a[contains(@class,'module-play-list-link')]"):
+                name = self._clean_text("".join(item.xpath(".//text()")))
+                href = self._clean_text("".join(item.xpath("./@href")))
+                if name and href:
+                    episodes.append(f"{name}${href}")
+            if episodes:
+                group_name = online_names[index] if index < len(online_names) and online_names[index] else f"线路{index + 1}"
+                play_from.append(group_name)
+                play_urls.append(episodes)
+
+        pan_groups = {}
+        for node in root.xpath("//div[contains(@class,'module-list')]/*[contains(@class,'tab-content')]"):
+            raw_name = self._clean_text("".join(node.xpath(".//h4[1]//text()")))
+            pan_name = raw_name.split("@", 1)[0].strip() if raw_name else "网盘资源"
+            pan_url = self._clean_text("".join(node.xpath(".//p[1]//text()")))
+            if not pan_url.startswith("http"):
+                continue
+            pan_type = self._detect_pan_type(pan_url)
+            pan_groups.setdefault(pan_type, []).append(f"{pan_name}${pan_url}")
+
+        for key, values in pan_groups.items():
+            play_from.append(key)
+            play_urls.append(values)
+
+        vod = {
+            "vod_id": vod_id,
+            "vod_name": title,
+            "vod_pic": self._build_url(pic),
+            "vod_content": content,
+            "vod_remarks": "",
+            "vod_play_from": "$$$".join(play_from),
+            "vod_play_url": self._join_group_urls(play_urls),
+        }
+        return {"list": [vod]}
