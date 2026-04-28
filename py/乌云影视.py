@@ -37,6 +37,9 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def _stringify(self, value):
         return "" if value is None else str(value)
 

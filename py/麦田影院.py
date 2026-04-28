@@ -114,14 +114,33 @@ class Spider(BaseSpider):
 
     def _extract_detail_content(self, root):
         candidates = [
-            "//*[contains(@class,'vod_content')][1]//text()",
-            "//*[contains(@class,'detail-content')][1]//text()",
-            "//*[contains(@class,'switch-box')][1]//text()",
+            "//*[@id='height_limit'][1]",
+            "//*[contains(@class,'vod_content')][1]",
+            "//*[contains(@class,'detail-content')][1]",
+            "//*[contains(@class,'switch-box')]//*[contains(@class,'text') or contains(@class,'desc') or contains(@class,'content')][1]",
         ]
         for xpath in candidates:
-            text = self._clean_text("".join(root.xpath(xpath)))
+            nodes = root.xpath(xpath)
+            if not nodes:
+                continue
+            text = self._clean_text("".join(nodes[0].xpath(".//text()")))
             if text:
                 return text
+        return ""
+
+    def _parse_meta_by_labels(self, root, labels):
+        if root is None:
+            return ""
+        values = labels if isinstance(labels, (list, tuple)) else [labels]
+        patterns = [str(item or "").rstrip(":：").strip() for item in values if str(item or "").strip()]
+        for node in root.xpath("//li|//p|//span|//div"):
+            text = self._clean_text("".join(node.xpath(".//text()")))
+            if not text:
+                continue
+            for label in patterns:
+                matched = re.match(rf"^{re.escape(label)}\s*[:：]?\s*(.*)$", text)
+                if matched:
+                    return self._clean_text(matched.group(1))
         return ""
 
     def _parse_play_groups(self, root):
@@ -155,8 +174,16 @@ class Spider(BaseSpider):
             "vod_id": vod_id,
             "vod_name": self._clean_text("".join(root.xpath("//h1[1]//text()"))),
             "vod_pic": self._build_url(self._extract_detail_pic(root)),
+            "type_name": self._parse_meta_by_labels(root, ["类型"]),
+            "vod_year": self._parse_meta_by_labels(root, ["年份", "年代"]),
+            "vod_area": self._parse_meta_by_labels(root, ["地区"]),
+            "vod_lang": self._parse_meta_by_labels(root, ["语言"]),
+            "vod_douban_score": self._parse_meta_by_labels(root, ["豆瓣", "评分"]),
+            "vod_douban_id": self._parse_meta_by_labels(root, ["豆瓣ID"]),
+            "vod_director": self._parse_meta_by_labels(root, ["导演"]),
+            "vod_actor": self._parse_meta_by_labels(root, ["主演", "演员"]),
             "vod_content": self._extract_detail_content(root),
-            "vod_remarks": "",
+            "vod_remarks": self._parse_meta_by_labels(root, ["状态", "备注", "更新"]),
             "vod_play_from": "$$$".join(item[0] for item in groups),
             "vod_play_url": "$$$".join(item[1] for item in groups),
         }

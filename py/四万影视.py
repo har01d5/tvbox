@@ -125,6 +125,9 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def _build_filters(self):
         years = [{"n": "全部", "v": ""}]
         for year in range(2026, 1999, -1):

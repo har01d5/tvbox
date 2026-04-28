@@ -120,6 +120,9 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def homeContent(self, filter):
         return {"class": list(self.classes), "filters": self.filters, "list": []}
 

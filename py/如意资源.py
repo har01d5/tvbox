@@ -95,6 +95,9 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def _build_query(self, params=None):
         parts = []
         for key, value in (params or {}).items():

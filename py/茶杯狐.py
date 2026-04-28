@@ -35,6 +35,9 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def _build_url(self, path):
         return urljoin(self.host + "/", str(path or "").strip())
 

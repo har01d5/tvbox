@@ -46,6 +46,9 @@ class Spider(BaseSpider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def _headers(self):
         return {
             "User-Agent": self.user_agent,

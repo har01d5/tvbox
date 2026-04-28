@@ -100,6 +100,53 @@ class TestMaiTianSpider(unittest.TestCase):
             "第1集$/vodplay/1-1-1.html#第2集$/vodplay/1-1-2.html$$$正片$/vodplay/1-2-1.html",
         )
 
+    @patch.object(Spider, "_request_html")
+    def test_detail_content_extracts_meta_and_keeps_intro_clean(self, mock_request_html):
+        mock_request_html.return_value = """
+        <html><body>
+        <h1>示例影片</h1>
+        <div class="detail-pic"><img data-src="/detail-meta.jpg" /></div>
+        <ul class="slide-info">
+          <li>名称: 示例影片</li>
+          <li>类型: 剧情</li>
+          <li>年代: 2026</li>
+          <li>地区: 大陆</li>
+          <li>语言: 国语</li>
+          <li>评分: 8.8</li>
+          <li>导演: 导演甲</li>
+          <li>演员: 演员甲 / 演员乙</li>
+          <li>豆瓣ID: 1234567</li>
+        </ul>
+        <div class="switch-box">
+          <div class="text cor3">这里是正确简介</div>
+          <div class="anthology-tab">
+            <a class="swiper-slide">MT源6</a>
+          </div>
+          <div class="anthology-list">
+            <div class="anthology-list-box">
+              <ul class="anthology-list-play">
+                <li><a href="/vodplay/2-1-1.html">第1集</a></li>
+              </ul>
+            </div>
+          </div>
+          <script>
+            $(".anthology-tab a").eq(0).addClass("on nav-dt");
+          </script>
+        </div>
+        </body></html>
+        """
+        result = self.spider.detailContent(["/voddetail/2.html"])
+        vod = result["list"][0]
+        self.assertEqual(vod["type_name"], "剧情")
+        self.assertEqual(vod["vod_year"], "2026")
+        self.assertEqual(vod["vod_area"], "大陆")
+        self.assertEqual(vod["vod_lang"], "国语")
+        self.assertEqual(vod["vod_douban_score"], "8.8")
+        self.assertEqual(vod["vod_director"], "导演甲")
+        self.assertEqual(vod["vod_actor"], "演员甲 / 演员乙")
+        self.assertEqual(vod["vod_douban_id"], "1234567")
+        self.assertEqual(vod["vod_content"], "这里是正确简介")
+
     @patch.object(Spider, "_request_json")
     @patch.object(Spider, "_request_html")
     def test_player_content_returns_direct_url(self, mock_request_html, mock_request_json):

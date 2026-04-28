@@ -1,12 +1,12 @@
-import re
-import os
 import json
-import time
-import requests
-from lxml import etree
+import os
+import re
 from abc import abstractmethod, ABCMeta
 from importlib.machinery import SourceFileLoader
-from base.localProxy import Proxy
+
+import requests
+from lxml import etree
+
 
 class Spider(metaclass=ABCMeta):
     _instance = None
@@ -64,6 +64,9 @@ class Spider(metaclass=ABCMeta):
     def getName(self):
         pass
 
+    def danmaku(self):
+        return False
+
     def getDependence(self):
         return []
 
@@ -71,7 +74,7 @@ class Spider(metaclass=ABCMeta):
         return self.loadModule(name).Spider()
 
     def loadModule(self, name):
-        path = os.path.join(os.path.join("../plugin"),  f'{name}.py')
+        path = os.path.join(os.path.join("../plugin"), f'{name}.py')
         return SourceFileLoader(name, path).load_module()
 
     def regStr(self, reg, src, group=1):
@@ -113,9 +116,6 @@ class Spider(metaclass=ABCMeta):
     def json2str(str):
         return json.dumps(str, ensure_ascii=False)
 
-    def getProxyUrl(self, local=True):
-        return f'{Proxy.getUrl(local)}?do=py'
-
     def log(self, msg):
         if isinstance(msg, dict) or isinstance(msg, list):
             print(json.dumps(msg, ensure_ascii=False))
@@ -123,29 +123,10 @@ class Spider(metaclass=ABCMeta):
             print(f'{msg}')
 
     def getCache(self, key):
-        value = self.fetch(f'http://127.0.0.1:{Proxy.getPort()}/cache?do=get&key={key}', timeout=5).text
-        if len(value) > 0:
-            if value.startswith('{') and value.endswith('}') or value.startswith('[') and value.endswith(']'):
-                value = json.loads(value)
-                if type(value) == dict:
-                    if not 'expiresAt' in value or value['expiresAt'] >= int(time.time()):
-                        return value
-                    else:
-                        self.delCache(key)
-                        return None
-            return value
-        else:
-            return None
+        pass
 
     def setCache(self, key, value):
-        if type(value) in [int, float]:
-            value = str(value)
-        if len(value) > 0:
-            if type(value) == dict or type(value) == list:
-                value = json.dumps(value, ensure_ascii=False)
-        r = self.post(f'http://127.0.0.1:{Proxy.getPort()}/cache?do=set&key={key}', data={"value": value}, timeout=5)
-        return 'succeed' if r.status_code == 200 else 'failed'
+        pass
 
     def delCache(self, key):
-        r = self.fetch(f'http://127.0.0.1:{Proxy.getPort()}/cache?do=del&key={key}', timeout=5)
-        return 'succeed' if r.status_code == 200 else 'failed'
+        pass

@@ -36,6 +36,9 @@ class Spider(Spider):
     def getName(self):
         return self.name
 
+    def danmaku(self):
+        return True
+
     def init(self, extend=''):
         pass
 
