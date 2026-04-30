@@ -8,9 +8,9 @@ https://github.com/cluntop/tvbox/tree/main/py
 ## 订阅资源
 http://www.饭太硬.com/tv
 
-http://tvbox.xn--4kq62z5rby2qupq9ub.top/
+http://tvbox.王二小放牛娃.top/
 
-http://mitvbox.xyz/%E5%B0%8F%E7%B1%B3/DEMO.json
+http://mitvbox.xyz/小米/DEMO.json
 
 http://cdn.qiaoji8.com/tvbox.json
 
