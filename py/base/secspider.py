@@ -92,7 +92,6 @@ def build_secspider_package(
 
     return "\n".join(
         [
-            "// ignore",
             f"//@name:{headers['name']}",
             f"//@version:{headers['version']}",
             f"//@remark:{headers['remark']}",
@@ -105,7 +104,7 @@ def build_secspider_package(
             f"//@ek:{headers['ek']}",
             f"//@hash:{headers['hash']}",
             f"//@sig:{headers['sig']}",
-            "// ignore",
+            "",
             f"payload.base64:{payload_b64}",
         ]
     )
