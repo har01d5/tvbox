@@ -11,6 +11,22 @@ from base.secspider import (
 )
 
 
+def _resolve_package_version(output_path: Path, requested_version: str) -> str:
+    if output_path.suffix.lower() != ".txt" or not output_path.is_file():
+        return requested_version
+
+    for line in output_path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("//@version:"):
+            continue
+        current_version = line.removeprefix("//@version:").strip()
+        try:
+            return str(int(current_version) + 1)
+        except ValueError:
+            return requested_version
+
+    return requested_version
+
+
 def _cmd_genkeys(args) -> int:
     private_pem, public_pem = generate_signing_keypair()
     Path(args.private_key).write_text(private_pem, encoding="utf-8")
@@ -23,10 +39,11 @@ def _cmd_genkeys(args) -> int:
 def _cmd_pack(args) -> int:
     input_path = Path(args.input)
     output_path = Path(args.output) if args.output else Path(f"{(args.name or input_path.stem)}.txt")
+    version = _resolve_package_version(output_path, args.version)
     package_text = build_secspider_package(
         source_text=input_path.read_text(encoding="utf-8"),
         name=args.name or input_path.stem,
-        version=args.version,
+        version=version,
         remark=args.remark,
         kid=args.kid,
         signing_private_key=load_signing_private_key(args.private_key),
