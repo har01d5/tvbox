@@ -20,7 +20,7 @@ http://宝盒接口.top
 
 http://肥猫.com
 
-http://ok321.top/tv
+https://raw.githubusercontent.com/cyao2q/files/refs/heads/master/ok.json
 
 ## 电视直播
 ### 咪咕
