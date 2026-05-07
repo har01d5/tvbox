@@ -16,6 +16,10 @@ http://cdn.qiaoji8.com/tvbox.json
 
 https://raw.githubusercontent.com/yoursmile66/TVBox/refs/heads/main/XC.json
 
+http://宝盒接口.top
+
+http://肥猫.com
+
 http://ok321.top/tv
 
 ## 电视直播
