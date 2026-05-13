@@ -20,7 +20,7 @@ http://宝盒接口.top
 
 http://肥猫.com
 
-https://raw.githubusercontent.com/cyao2q/files/refs/heads/master/ok.json
+https://raw.githubusercontent.com/west2008/tvbox-files/refs/heads/master/ok.json
 
 ## 电视直播
 ### 咪咕
